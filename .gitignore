@@ -1,0 +1,17 @@
+# This project has no build step and no dependencies.
+# Nothing here should ever be generated into the repo — see CLAUDE.md.
+
+# Scratch output from the headless test harness (docs/ARCHITECTURE.md)
+app.js
+test.js
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
