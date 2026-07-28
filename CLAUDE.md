@@ -84,11 +84,11 @@ EOF
 
 | Region | Contents |
 |---|---|
-| `@font-face` | Space Grotesk + IBM Plex Mono as base64 woff2. ~88KB, latin subset. Do not hand-edit; regenerate. |
+| `@font-face` | Space Grotesk + IBM Plex Mono (latin subset, for the UI) hand-embedded, then 12 art faces at full coverage between generated markers. ~3MB. Regenerate with `tools/fonts.py --write`; never hand-edit. |
 | `<style>` | All CSS. Tokens on `:root`, then the block kit. **See `docs/STYLE_GUIDE.md` before touching any of it.** |
 | `#titlebar` | Window chrome: traffic lights, document title, `⌘K`. |
-| `<aside id="rail">` | Tabs (Adjust / Presets / History) + every control, as `.blk` blocks. Restyles into a floating glass panel in focus mode. |
-| `<main id="stage">` | Mode tabs, preview canvas `#out`, empty state `#empty`, ASCII text panel `#textwrap`, status bar, focus-mode `#dock`. |
+| `<aside id="rail">` | Tabs (Adjust / Presets / History), the Basic/All disclosure toggle, and every control as `.blk` blocks. Restyles into a floating glass panel in focus mode. |
+| `<main id="stage">` | Mode tabs (Dither / ASCII / Image), preview canvas `#out`, empty state `#empty`, ASCII text panel `#textwrap`, status bar, focus-mode `#dock`. |
 | `#cmdscrim` / `#expscrim` | Command palette and export dialog overlays. |
 | `algorithms` | `ED` (error-diffusion kernels) and `ORD` (ordered matrices, threshold functions, parametric screens). `rankMat(n, f)` generates most of the patterned matrices by ranking cells, which guarantees distinct thresholds. |
 | `halftone screen` | `HT_SHAPES` + `ORD.screen.make()` — the adjustable rotatable screen. |
@@ -97,7 +97,7 @@ EOF
 | `algorithm copy` | `ALGO_INFO` — blurb / pro / con / "best for" per algorithm, for the info card. |
 | `palettes` | `PALETTES` map, `PAL_QUICK` (the five surfaced swatches). |
 | `charsets` | `CHARSETS` map. |
-| `font catalogue` | `FONTS` + `FONT_CLASSES` for the filterable font picker. |
+| `font catalogue` | `FONT_COVER` (generated), `FONTS` + `FONT_CLASSES` for the filterable font picker. |
 | `looks (presets)` | `LOOKS` — named partial configs applied by the Presets tab. |
 | `state` | Module-level `img`, `mode`, `colormode`, offscreen canvases `work`/`samp`, output `out`. |
 | `helpers` | `v()` / `num()` read control values by id. `toast()`. `syncOuts()` updates slider readouts. |
@@ -109,10 +109,12 @@ EOF
 | `CMYK halftone` | `cmykScreen()` — four rotated screens multiplied together. |
 | `output scale` | `SIZE_PRESETS`, `baseOutSize()`, `exportScale()` — always a whole number. |
 | `render: dither` | `renderDither()`. |
+| `render: image` | `imageWorkSize()`, `imageGrid()`, `renderImage()` — the pipeline with the quantizer taken off. |
 | `render: ascii` | `charsetChars()`, `denseOnBright()`, `renderAscii()`. |
 | `status bar` | `setStatus()` — cells, algorithm, colours; render time is measured in `render()`. |
-| `algorithm info card` | `algoThumb()` renders the *real* algorithm at 26×20; `renderAlgoCard()` fills the copy. |
-| `driver` | `render()`, `schedule()` (rAF + cost-based coalescing), `previewCols()`, `updateVisibility()`. |
+| `algorithm info card` | `algoThumbTo(key, canvas)` renders the *real* algorithm at 26×20; `algoThumb()` targets the card; `renderAlgoCard()` fills the copy. |
+| `algorithm picker` | `ALGO_KEYS`, `renderAlgoList()`, `drawAlgoRow()`, `markAlgoSel()`, `syncAlgoThumbs()` — the thumbnail list. `#algo` is a hidden select the list drives, same shape as `#font` / `#fontpicker`. |
+| `driver` | `render()`, `schedule()` (rAF + cost-based coalescing), `previewCols()`, `updateVisibility()`, `advDirty()`. |
 | `config transport` | `readCfg()` / `applyCfg()` / `CFG_IDS` / `DEFAULTS`. Shared by presets, history, reset and the clipboard. |
 | `history` | `pushHistory()` (debounced 800ms), `renderHistory()`. Parameter snapshots, never bitmaps. |
 | `scale` | `GRID_STOPS` / `ASCII_STOPS` named stops, `setScale()`. |
@@ -138,8 +140,21 @@ EOF
 - Any new control inside `#rail` (or `#expcard`) is auto-bound to `schedule()` — no
   listener needed. Opt a field out with `data-nobind` (search boxes, filters).
 - Show/hide of conditional controls lives in one place: `updateVisibility()`.
+- **Mode gating is declared, not coded.** A `.blk` lists the modes it belongs to in
+  `data-modes="dither ascii"`; a block with no attribute is universal.
+  `updateVisibility()` toggles `.offmode` from that in one line. Don't add a
+  per-mode `classList.toggle('hidden', ...)` — `.offmode` is a separate class
+  precisely so a block can be gated by mode *and* by its own condition at once.
+- **Advanced controls are marked, not moved.** `data-adv` on a control's *wrapper*
+  hides it unless the panel is at **All** (`body.basic` is the default). It never
+  changes a value, so both levels render identically. `advDirty()` marks the All
+  button when a currently-relevant advanced control sits away from its default,
+  so a preset can't hide a surprise. The level is deliberately **not** in
+  `CFG_IDS` — presets and history must not move it.
 - `render()` is the only entry point. It's idempotent and cheap enough to run on
-  every input event via `schedule()`.
+  every input event via `schedule()`. It dispatches on `mode` to one of three
+  render functions; all three are expected to leave `lastGrid` / `lastLines` /
+  `lastText` in a state the exporters can trust.
 - Adding a control that should survive a preset round-trip means adding its id to
   the `CFG_IDS` array. Easy to forget. It also governs history snapshots and reset.
   `readCfg`/`applyCfg` skip ids with no element rather than throwing, so a stale
@@ -162,7 +177,14 @@ source image or video frame
   → ditherPixels()    error diffusion or ordered, against a palette
   → upscale (smoothing OFF) into #out        [dither mode]
   → or map levels to glyphs and draw text    [ascii mode]
+  → or skip the quantizer entirely           [image mode]
 ```
+
+Image mode branches out after `effects()`: nothing is quantized, so the grid goes
+straight to `#out`. Its two controls say the same thing the other modes' grid and
+cell do, in the units that make sense without cells — `#imgres` is a *ceiling* on
+the working long edge (a smaller source is never blown up) and `#imgpx` divides
+that into blocks. Every pass is per-pixel, so `#imgpx` is also the cost lever.
 
 Grid size and cell size are deliberately decoupled — that's the "dither at any
 scale without losing quality" behaviour. The grid controls detail; the cell
@@ -220,10 +242,35 @@ has dither texture instead of banding.
   `fxOrder()` drops unknown keys and appends missing ones, so presets saved
   before a pass existed still load. Reordering *moves* the existing rows with
   `appendChild` — rebuilding them would drop the boot-time auto-binding.
+- **Throttling must be gated on the cost of a *full* render, not the last one.**
+  `previewCols()` reads `lastFullCost`, which only non-preview renders write. It
+  used to read `lastCost`, and that oscillated: a cheap 18ms preview pulled the
+  measurement under the 40ms threshold, so the next frame rendered full at 400ms,
+  which pushed it back over, so the frame after previewed again. Dragging
+  alternated coarse/fine every frame and spent nearly all its wall time in the
+  full renders — it reads as the picture not tracking the slider at all. Any
+  future adaptive budget has the same trap: never feed a throttled measurement
+  back into the throttle.
+- **Thumbnails are not free.** Drawing all 52 algorithm previews is ~85ms, so
+  `renderAlgoList()` draws a row only while it is on screen (an
+  `IntersectionObserver` rooted on `#algolist`) and `syncAlgoThumbs()` debounces
+  a redraw and skips entirely while `dragging`. Never draw the list from
+  `render()` directly. Selection is marked in place by `markAlgoSel()` — a
+  rebuild would drop the scroll position and every drawn thumbnail with it.
 - **Anything random must go through `mulberry(fxSeed)`.** Raw `Math.random()` in
   the render path reshuffles on every render: the preview crawls while you drag
   an unrelated slider, and a clip's grain flickers frame to frame. Grain hit
   exactly this bug. `temporal()` advances the seed deliberately for motion.
+- **`colormode` is shared by all three modes.** It defaults to mono, which is right
+  for dithering and surprising in Image mode — a fresh image render is greyscale
+  until you flip it. Changing it on a mode switch would mean a mode tab silently
+  editing a setting that round-trips, which breaks preset determinism. The
+  Mono/Colour control was moved to the top of **Tone** instead, where Image mode
+  can see it; `adjust()` is what implements it, so that is where it belonged.
+- **Image mode has nothing for the vector and text exporters.** `renderImage()`
+  clears `lastGrid`/`lastLines`/`lastText` because it writes neither a palette grid
+  nor a glyph grid. `FMT_MODES` is what withholds SVG/TXT/HTML in the export
+  dialog — without it they'd silently produce empty files.
 - **A preset is applied over `DEFAULTS`, not over current state.** `applyLook()`
   layers a sparse look onto the defaults so the same look always renders the
   same picture. Only `extracted` survives, because it belongs to the image.
@@ -238,12 +285,39 @@ has dither texture instead of banding.
 - **Font availability can't be measured at boot.** `document.fonts.ready` has not
   settled, so the embedded faces measure as missing. The font picker recomputes
   once it resolves.
+- **Thirteen of the 30 catalogue fonts are embedded, at full coverage.**
+  `tools/fonts.py` pulls them from the Ubuntu archive and writes base64 woff2
+  between markers in `<style>`. Regenerate with `--write`; never hand-edit the
+  block. The six proprietary faces that used to be listed (Consolas, Menlo,
+  Monaco, SF Mono, Andale Mono, Lucida Console) are gone — they cannot legally
+  be redistributed embedded at any file size, and the catalogue names an open
+  replacement for each instead.
+- **Never source embeddable fonts from Google Fonts or Fontsource.** Both serve
+  *subsets*. A "latin" woff2 has no block elements, no box drawing and no
+  braille — exactly the glyphs ASCII art is made of — so embedding one silently
+  shears the grid on half the charsets. apt ships the upstream files intact.
+- **Glyph coverage cannot be measured in the browser.** Once the browser
+  substitutes a missing glyph from the fallback chain, any measurement describes
+  the fallback, not the family — which reported Ogham as *absent* from Unifont
+  (it is there, correctly double-width) and *present* in latin-only faces. So
+  coverage is generated: `FONT_COVER` comes from `tools/fonts.py`, `cov` on a
+  `FONTS` entry covers the hand-embedded UI faces, and anything else is marked
+  unknown and claims nothing. `gridSafe()` still answers a different and real
+  question — is this glyph M-width — which is about layout, not coverage.
+- **A double-width ramp is not a broken ramp.** `cellWidth()` sizes the cell
+  from the glyphs the charset will actually draw, not from `'M'`. Ogham and the
+  CJK density sets advance twice as far as `'M'`, and the flat-ink path draws a
+  whole row as one `fillText`, so an `'M'`-sized cell laid the row out at half
+  the width it needed and ran it off the canvas. What actually shears is a ramp
+  disagreeing with *itself* — `rampShears()` — which is what per-glyph fallback
+  produces.
 
 ## Current state
 
 Working and complete for the original ask, plus the Dither Boy parity work in
-`docs/FEATURE_PLAN.md` (all five phases landed). 52 algorithms, 39 palettes, 34
-charsets, 41 presets, 12 reorderable effect passes.
+`docs/FEATURE_PLAN.md` (all five phases landed). Three modes — Dither, ASCII and
+Image — over 52 algorithms, 39 palettes, 34 charsets, 47 presets and 12
+reorderable effect passes.
 
 Known rough edges:
 - Very large grids with a 12-tap kernel are still slow on a *settled* render —
@@ -260,6 +334,13 @@ Known rough edges:
   encode. It is a hint, not a promise.
 - 49 of the 52 `ALGO_INFO` blurbs were written during implementation, not by
   Design. Flagged in `docs/STYLE_GUIDE.md` for review.
+- Image mode at source resolution is single-threaded and per-pixel, so a large
+  photo with pixel sort or edge detect takes real time. The working-size ceiling
+  and pixel size are the levers; a worker is still the real fix.
+- The Adjust pane is ordered by the history of the build, not by the pipeline —
+  Effects sits above Dither, Tone above both. Reorganizing it into pipeline stages
+  is parked in `docs/ROADMAP.md` as the next UI step; the mechanisms it needs
+  (`data-modes`, `data-adv`, collapsible `.blk`) are already in.
 - **Ostromoukhov is deliberately absent.** It needs a published 256-row
   variable-coefficient table that could not be verified; inventing the numbers
   would be worse than the gap. It remains the best available tone reproduction

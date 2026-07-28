@@ -1,7 +1,7 @@
 # GRIT
 
-Browser-based image dithering and ASCII art. One HTML file, no dependencies, no
-network, no install. Everything runs locally in the browser.
+Browser-based image dithering, ASCII art and effects. One HTML file, no
+dependencies, no network, no install. Everything runs locally in the browser.
 
 ## Get it
 
@@ -58,23 +58,46 @@ generate one.
 
 ## ASCII mode
 
-- **34 character sets** in seven categories — classic, blocks, braille (packs a
+- **35 character sets** in seven categories — classic, blocks, braille (packs a
   2×4 dither grid into every glyph — highest detail per cell, still copyable as
-  text), technical, geometric, language (katakana, runic, Greek, Cyrillic,
-  hanzi), games — plus a custom ramp field
+  text), technical, geometric, language (katakana, runic, **Ogham**, Greek,
+  Cyrillic, hanzi), games — plus a custom ramp field
 - **Character depth** narrows the ramp to its first N steps, and **character
   offset** slides the whole luminance-to-glyph mapping
 - The character ramp is itself dithered with whichever algorithm is selected, so
   you get texture instead of banding
-- **A filterable font picker** — 34 monospace families, searchable and faceted by
-  classification (system, typewriter, terminal, humanist, geometric) and by what
-  actually works on your machine: whether the family is installed, and whether its
-  block and braille glyphs hold the monospace grid
+- **A filterable font picker** — 30 monospace families, thirteen of them embedded
+  in the file at full glyph coverage, so they work on any machine with nothing
+  installed. Searchable, faceted by classification (system, typewriter, terminal,
+  humanist, geometric) and by coverage (blocks, braille, runic, Ogham). Every row
+  previews its own letterforms and carries a tag for what it *lacks* — "no
+  braille", "latin only" — taken from the fonts' own glyph tables rather than
+  guessed. Families that resolve sort to the top; the rest fall back to a system
+  mono and say so
+- **Ogham and Runic actually render.** Both are carried by embedded faces, and
+  the cell is sized from the character set rather than from `M`, so Ogham's
+  double-width glyphs sit on the grid instead of running off it. Pick a set your
+  font can't draw and the warning names one that can, with a button to switch
 - Size, line height; flat, image-sampled, or palette-quantized ink; solid or
   transparent paper
 - Ramp direction follows ink/paper contrast automatically
 - Warns when the chosen font has no glyph for the chosen set — a substituted
   glyph is a different width and shears the grid
+
+## Image mode
+
+The same pipeline with the dithering taken off — tone and every effect pass
+against a continuous-tone image, no palette and no glyphs.
+
+- **All twelve effect passes**, in any order, with nothing quantized behind them
+- **Working size** caps the long edge — source resolution, or 2048 / 1440 / 1080
+  / 720 / 480px. It is a ceiling, not a target: a smaller image is left alone
+  rather than blown up
+- **Pixel size** divides the working size into blocks and prints them back
+  nearest-neighbour, so it both pixelates and controls what the effects cost —
+  every pass is per-pixel, so at 8 there are 64× fewer of them
+- Exports as PNG, or as GIF / WebM / a PNG sequence from a clip. SVG and text
+  aren't offered here — there is no grid of flat colours or glyphs to build them from
 
 ## Clips
 
@@ -101,17 +124,26 @@ relative to each source, not in pixels.
 ## Interface
 
 - **Workbench** — a left control rail with Adjust / Presets / History tabs
+- **Basic or All** — the panel shows the everyday controls by default and reveals
+  the refinements on request. It only ever hides controls, never changes them, so
+  both levels render exactly the same picture. Each block also only appears in the
+  modes it applies to, so switching to Image puts the algorithm, dither and palette
+  controls away
 - **Focus mode** — the rail detaches into a floating panel over a full-bleed
   canvas, with a dock at the bottom
-- **41 presets** grouped by use — print and repro, console and retro, screen,
-  photographic, glitch, ASCII — each applied over the defaults, so the same look
+- **47 presets** grouped by use — print and repro, console and retro, screen,
+  photographic, glitch, ASCII, image — each applied over the defaults, so the same look
   always gives the same picture. Save your own into a shareable pack
 - **⌘K command palette** — 250-odd entries: every algorithm, palette, ramp,
   font, scale, export size and action
 - **Randomize**, with locks to keep the palette, algorithm or scale where it is,
   and a separate shuffle that moves only the adjustment sliders
-- **Algorithm info card** — a live thumbnail rendered with the real algorithm,
-  plus what each one is good and bad at
+- **An algorithm picker that previews** — every one of the 52 rows carries a
+  thumbnail rendered with the real algorithm against your image, filterable by
+  name and by family, so you pick by eye rather than by name. Rows draw only as
+  they scroll into view
+- **Algorithm info card** — a larger live thumbnail of the selected or hovered
+  algorithm, plus what each one is good and bad at
 - **History** — parameter snapshots you can jump back to, with ⌘Z / ⇧⌘Z undo and
   redo (in memory; no storage)
 - **Zoom** from 25% to 800%, or fit
@@ -141,6 +173,7 @@ written to browser storage.
 | `⌘K` / `Ctrl+K` | Command palette |
 | `d` | Dither mode |
 | `a` | ASCII mode |
+| `i` | Image mode |
 | `e` | Export dialog |
 | `s` | Save PNG |
 | `f` | Focus mode |
