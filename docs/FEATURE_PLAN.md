@@ -1,8 +1,30 @@
 # Feature plan — mirroring Dither Boy
 
-Status: **plan only.** Nothing here is built. This is the shopping list, the
-gap analysis behind it, and a concrete implementation sketch for each item so
-the work can be picked up in any order.
+Status: **all five phases shipped.** This document is kept as the record of what
+was researched, what was decided, and why — the gap analysis and the reasoning
+behind each design choice are still the useful part. Where the build diverged
+from the plan it is noted inline below.
+
+Two items in the plan were deliberately **not** built:
+
+- **Ostromoukhov** (§0.1) — needs a published 256-row coefficient table that
+  could not be verified from here. Inventing the numbers would be worse than the
+  gap. Still the best available tone reproduction; worth adding from a real source.
+- **Dot diffusion** (§0.1) — deferred as the plan recommended. Riemersma covers
+  the "organic, no directional artefact" need more distinctively, and shipped.
+
+Two things came out differently from the sketch:
+
+- The **parametric halftone screen** (§2.1) landed in Phase 0 rather than Phase 2,
+  because `ORD.screen` needs its `make()` closure to exist the moment the entry
+  is in the table.
+- The **fixed angled line screens** (§0.2) were dropped, as the plan itself
+  recommended: the parametric screen with an angle control supersedes all of them.
+
+What shipped: 52 algorithms, 39 palettes, 34 charsets, 41 presets, 12
+reorderable effect passes, colour depth and tonal mapping, an adjustable
+halftone screen with CMYK separation, temporal variation, batch export, preset
+packs, three output size modes and cost-based render throttling.
 
 Scope of this document:
 

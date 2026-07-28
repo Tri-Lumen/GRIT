@@ -3762,9 +3762,24 @@ function buildCommands(){
   c.push({k:'panel', n:'Show Presets tab', run:()=>showTab('presets')});
   c.push({k:'panel', n:'Show History tab', run:()=>showTab('history')});
   c.push({k:'panel', n:'Reset all controls', run:resetAll});
+  c.push({k:'edit', n:'Shuffle adjustment sliders', run:shuffleAdjustments});
+  c.push({k:'dither', n:'Reset effect order', run:()=>$('#fxreset').click()});
+  c.push({k:'dither', n:'Toggle CMYK separation', run:()=>{
+    $('#algo').value='ord:screen'; $('#cmyk').checked=!$('#cmyk').checked; schedule(); pushHistory(true);
+  }});
+  GRID_STOPS.forEach(S=>c.push({k:'scale', n:`Scale — ${S.n}`, h:`${S.cols}×${S.cell}px`,
+    run:()=>{ setScale(mode==='ascii' ? ASCII_STOPS[GRID_STOPS.indexOf(S)] : S); pushHistory(true); }}));
+  SIZE_PRESETS.forEach(P=>c.push({k:'export', n:`Export size — ${P.n}`, h:P.note, run:()=>{
+    $('#sizemode').value='preset'; $('#sizepreset').value=P.k; schedule(); openExport();
+  }}));
+  if(batchFiles.length>1) c.push({k:'export', n:`Export all ${batchFiles.length} queued images`, run:exportBatch});
   c.push({k:'settings', n:'Copy settings JSON', run:()=>$('#copycfg').click()});
   c.push({k:'settings', n:'Paste settings JSON', run:()=>$('#pastecfg').click()});
-  for(const k in LOOKS) c.push({k:'look', n:LOOKS[k].n, h:LOOKS[k].d, run:()=>{ $$('#presetlist .row')[Object.keys(LOOKS).indexOf(k)].click(); }});
+  c.push({k:'settings', n:'Save this look to a pack', run:()=>$('#savelook').click()});
+  c.push({k:'settings', n:'Copy preset pack', run:()=>$('#copypack').click()});
+  c.push({k:'settings', n:'Paste preset pack', run:()=>$('#pastepack').click()});
+  for(const k in LOOKS) c.push({k:'look', n:LOOKS[k].n, h:LOOKS[k].d, run:()=>applyLook(LOOKS[k])});
+  userLooks.forEach(L=>c.push({k:'look', n:L.n, h:'saved', run:()=>applyLook(L)}));
   for(const k in ED) c.push({k:'algorithm', n:ED[k].n, run:()=>{ $('#algo').value='ed:'+k; schedule(); pushHistory(); }});
   for(const k in ORD) c.push({k:'algorithm', n:ORD[k].n, run:()=>{ $('#algo').value='ord:'+k; schedule(); pushHistory(); }});
   for(const k in PALETTES) c.push({k:'palette', n:PALETTES[k].n, run:()=>{ $('#palette').value=k; schedule(); pushHistory(); }});
