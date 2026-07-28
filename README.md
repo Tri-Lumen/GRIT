@@ -133,8 +133,12 @@ relative to each source, not in pixels.
   font, scale, export size and action
 - **Randomize**, with locks to keep the palette, algorithm or scale where it is,
   and a separate shuffle that moves only the adjustment sliders
-- **Algorithm info card** — a live thumbnail rendered with the real algorithm,
-  plus what each one is good and bad at
+- **An algorithm picker that previews** — every one of the 52 rows carries a
+  thumbnail rendered with the real algorithm against your image, filterable by
+  name and by family, so you pick by eye rather than by name. Rows draw only as
+  they scroll into view
+- **Algorithm info card** — a larger live thumbnail of the selected or hovered
+  algorithm, plus what each one is good and bad at
 - **History** — parameter snapshots you can jump back to, with ⌘Z / ⇧⌘Z undo and
   redo (in memory; no storage)
 - **Zoom** from 25% to 800%, or fit

@@ -112,7 +112,8 @@ EOF
 | `render: image` | `imageWorkSize()`, `imageGrid()`, `renderImage()` — the pipeline with the quantizer taken off. |
 | `render: ascii` | `charsetChars()`, `denseOnBright()`, `renderAscii()`. |
 | `status bar` | `setStatus()` — cells, algorithm, colours; render time is measured in `render()`. |
-| `algorithm info card` | `algoThumb()` renders the *real* algorithm at 26×20; `renderAlgoCard()` fills the copy. |
+| `algorithm info card` | `algoThumbTo(key, canvas)` renders the *real* algorithm at 26×20; `algoThumb()` targets the card; `renderAlgoCard()` fills the copy. |
+| `algorithm picker` | `ALGO_KEYS`, `renderAlgoList()`, `drawAlgoRow()`, `markAlgoSel()`, `syncAlgoThumbs()` — the thumbnail list. `#algo` is a hidden select the list drives, same shape as `#font` / `#fontpicker`. |
 | `driver` | `render()`, `schedule()` (rAF + cost-based coalescing), `previewCols()`, `updateVisibility()`, `advDirty()`. |
 | `config transport` | `readCfg()` / `applyCfg()` / `CFG_IDS` / `DEFAULTS`. Shared by presets, history, reset and the clipboard. |
 | `history` | `pushHistory()` (debounced 800ms), `renderHistory()`. Parameter snapshots, never bitmaps. |
@@ -241,6 +242,21 @@ has dither texture instead of banding.
   `fxOrder()` drops unknown keys and appends missing ones, so presets saved
   before a pass existed still load. Reordering *moves* the existing rows with
   `appendChild` — rebuilding them would drop the boot-time auto-binding.
+- **Throttling must be gated on the cost of a *full* render, not the last one.**
+  `previewCols()` reads `lastFullCost`, which only non-preview renders write. It
+  used to read `lastCost`, and that oscillated: a cheap 18ms preview pulled the
+  measurement under the 40ms threshold, so the next frame rendered full at 400ms,
+  which pushed it back over, so the frame after previewed again. Dragging
+  alternated coarse/fine every frame and spent nearly all its wall time in the
+  full renders — it reads as the picture not tracking the slider at all. Any
+  future adaptive budget has the same trap: never feed a throttled measurement
+  back into the throttle.
+- **Thumbnails are not free.** Drawing all 52 algorithm previews is ~85ms, so
+  `renderAlgoList()` draws a row only while it is on screen (an
+  `IntersectionObserver` rooted on `#algolist`) and `syncAlgoThumbs()` debounces
+  a redraw and skips entirely while `dragging`. Never draw the list from
+  `render()` directly. Selection is marked in place by `markAlgoSel()` — a
+  rebuild would drop the scroll position and every drawn thumbnail with it.
 - **Anything random must go through `mulberry(fxSeed)`.** Raw `Math.random()` in
   the render path reshuffles on every render: the preview crawls while you drag
   an unrelated slider, and a clip's grain flickers frame to frame. Grain hit

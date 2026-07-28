@@ -322,6 +322,27 @@
   .prc span{font:400 10px/1.45 var(--ui); color:var(--t2)}
   #algobest{font:400 9.5px var(--mono); color:var(--t4); margin-top:2px}
 
+  /* ---------- algorithm picker ----------
+     Same row kit as the font picker. Each row carries a canvas showing the real
+     algorithm, so the list is the specimen sheet rather than a list of names. */
+  #algopicker{display:flex; flex-direction:column}
+  #algosearch{
+    border:0; border-bottom:1px solid var(--line-soft); border-radius:0;
+    background:transparent; background-image:none; padding:9px 11px;
+    font:400 11.5px var(--ui); color:var(--text); cursor:text;
+  }
+  #algosearch::placeholder{color:var(--t4)}
+  #algolist{max-height:236px; overflow-y:auto; overscroll-behavior:contain; padding:6px; gap:2px}
+  #algolist .row{padding:5px 7px; gap:9px; justify-content:flex-start}
+  #algolist .rl{font-size:11.5px; font-weight:400; flex:1}
+  #algolist .rr{font-size:9.5px; color:var(--t4); letter-spacing:.06em}
+  .athumb{
+    width:34px; height:26px; flex:none; border-radius:3px;
+    background:var(--canvas); image-rendering:pixelated;
+  }
+  #algoempty{display:none; padding:10px 11px}
+  #algoempty.on{display:block}
+
   /* ---------- font picker (search + facets, Adobe-Fonts style) ---------- */
   #fontpicker{display:flex; flex-direction:column}
   #fontsearch{
@@ -634,7 +655,19 @@
               <button class="cell" data-algo="ord:bayer8">Bayer 8×8</button>
               <button class="cell" data-algo="ord:white">White noise</button>
             </div>
-            <select id="algo" aria-label="All algorithms"></select>
+            <select id="algo" class="hidden" aria-label="All algorithms"></select>
+            <div class="card" id="algopicker">
+              <input type="text" id="algosearch" data-nobind placeholder="Filter algorithms…" spellcheck="false" autocomplete="off">
+              <div class="facets">
+                <div class="chips" id="algofacets">
+                  <button class="chip on" data-fam="all">All</button>
+                  <button class="chip" data-fam="ed">Error diffusion</button>
+                  <button class="chip" data-fam="ord">Ordered</button>
+                </div>
+              </div>
+              <div class="rows" id="algolist"></div>
+              <div class="note" id="algoempty">No algorithm matches that.</div>
+            </div>
             <div class="card" id="algocard">
               <div class="algotop">
                 <canvas id="algothumb" width="66" height="52"></canvas>
@@ -2618,7 +2651,8 @@ function setStatus(cells, n){
 }
 
 /* ---------- algorithm info card ---------- */
-function algoThumb(key){
+function algoThumb(key){ algoThumbTo(key, $('#algothumb')); }
+function algoThumbTo(key, dest){
   const cols=26, rows=20;
   thumb.width=cols; thumb.height=rows;
   tctx.imageSmoothingEnabled=true;
@@ -2633,10 +2667,74 @@ function algoThumb(key){
   const keep=colormode; colormode='mono'; adjust(d); colormode=keep;
   ditherPixels(d,cols,rows,[[23,23,23],[217,219,213]],key,{strength:1,spread:1,bias:0,serp:true});
   tctx.putImageData(d,0,0);
-  const c=$('#algothumb'), cx=c.getContext('2d');
+  const cx=dest.getContext('2d');
   cx.imageSmoothingEnabled=false;
-  cx.clearRect(0,0,c.width,c.height);
-  cx.drawImage(thumb,0,0,c.width,c.height);
+  cx.clearRect(0,0,dest.width,dest.height);
+  cx.drawImage(thumb,0,0,dest.width,dest.height);
+}
+
+/* ---------- algorithm picker ----------
+   Every row previews the real algorithm through the same code path as the info
+   card, so the list is a specimen sheet and not a list of names.
+
+   Drawing all 52 at once costs ~85ms, far too much to spend every time a tone
+   slider moves. Two things keep that off the render path: a row is drawn only
+   while it is actually on screen, and a redraw is debounced and never runs
+   mid-drag. Thumbnails use a fixed two-colour ramp on purpose — the point is to
+   compare algorithms with each other, not to preview the palette, which the
+   canvas beside them is already showing. */
+const ALGO_KEYS = [...Object.keys(ED).map(k=>'ed:'+k), ...Object.keys(ORD).map(k=>'ord:'+k)];
+// what a thumbnail actually depends on: the source, and the tone pass
+const thumbSig = () => [imgName, img?img.width:0, img?img.height:0,
+  v('bright'), v('contrast'), v('gamma'), v('sat'), v('noise'), v('invert')].join('|');
+let algoSig = null, algoThumbTimer = null, algoFam = 'all';
+const algoVisible = new Set();
+const algoObs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){ algoVisible.add(e.target); drawAlgoRow(e.target); }
+    else algoVisible.delete(e.target);
+  });
+}, {root:$('#algolist'), rootMargin:'150px'});
+function drawAlgoRow(row){
+  if(row._sig === algoSig) return;
+  // decorative: a thumbnail that throws must never take the picker with it
+  try{ algoThumbTo(row.dataset.algo, row.firstElementChild); row._sig = algoSig; }catch(e){}
+}
+function renderAlgoList(){
+  const q = $('#algosearch').value.trim().toLowerCase();
+  const w = $('#algolist'), cur = v('algo');
+  algoVisible.clear();
+  w.innerHTML='';
+  const shown = ALGO_KEYS.filter(k=>
+    (algoFam==='all' || k.startsWith(algoFam+':')) &&
+    (!q || algoName(k).toLowerCase().includes(q)));
+  shown.forEach(k=>{
+    const b=document.createElement('button');
+    b.className='row'; b.dataset.algo=k;
+    b.setAttribute('aria-pressed', String(k===cur));
+    b.innerHTML='<canvas class="athumb" width="26" height="20"></canvas>'+
+      '<span class="rl"></span><span class="rr"></span>';
+    b.querySelector('.rl').textContent = algoName(k);
+    b.querySelector('.rr').textContent = k.startsWith('ed:') ? 'diffusion' : 'ordered';
+    b.addEventListener('click',()=>{ $('#algo').value=k; algoHover=null; schedule(); pushHistory(true); });
+    b.addEventListener('mouseenter',()=>{ algoHover=k; renderAlgoCard(); });
+    b.addEventListener('mouseleave',()=>{ algoHover=null; renderAlgoCard(); });
+    w.appendChild(b);
+    algoObs.observe(b);
+  });
+  $('#algoempty').classList.toggle('on', !shown.length);
+}
+// selection moves far more often than the list changes, so mark in place — a
+// rebuild would drop the scroll position and every thumbnail with it
+function markAlgoSel(){
+  const cur = v('algo');
+  $$('#algolist .row').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.algo===cur)));
+}
+function syncAlgoThumbs(){
+  const sig = thumbSig();
+  if(sig === algoSig || dragging) return;
+  clearTimeout(algoThumbTimer);
+  algoThumbTimer = setTimeout(()=>{ algoSig = sig; algoVisible.forEach(drawAlgoRow); }, 160);
 }
 let algoHover = null;
 function renderAlgoCard(){
@@ -2648,6 +2746,8 @@ function renderAlgoCard(){
   $('#algocon').textContent = info.c;
   $('#algobest').textContent = 'best for ' + info.f;
   $$('#algogrid .cell').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.algo===v('algo'))));
+  markAlgoSel();
+  syncAlgoThumbs();
   try{ algoThumb(key); }catch(e){ /* thumbnail is decorative — never block a render */ }
 }
 
@@ -2665,10 +2765,17 @@ function renderAlgoCard(){
       setup would queue a fresh render behind every keystroke.
 
    Both are no-ops on a cheap render, which is the common case. */
-let queued=false, lastCost=0, dragging=false, coalesceUntil=0;
+let queued=false, lastCost=0, lastFullCost=0, dragging=false, coalesceUntil=0;
 const PREVIEW_MAX_COLS = 220;   // roughly the point where a 12-tap kernel stays interactive
+/* Gate on what a *full* render costs, never on what the last render costed.
+   Feeding a preview's cost back into this is what made dragging oscillate: a
+   cheap 18ms preview pulled the measurement under the threshold, so the next
+   frame rendered full at 400ms, which pushed it back over, so the frame after
+   that previewed again. The result alternated coarse/fine every frame and spent
+   most of its wall time in the full renders, which reads as the picture not
+   tracking the slider at all. */
 function previewCols(){
-  return dragging && lastCost > 40 ? PREVIEW_MAX_COLS : Infinity;
+  return dragging && lastFullCost > 40 ? PREVIEW_MAX_COLS : Infinity;
 }
 function render(){
   syncOuts();
@@ -2681,11 +2788,13 @@ function render(){
   fxSeed = Math.round(num('fxseed')) + frameSeed;
   if(!img){ setStatus('—', 0); $('#st-time').textContent='—'; return; }
   if(compareOn){ drawCompare(); return; }
+  // read the decision before rendering, from the same state the render paths see
+  const preview = previewCols() !== Infinity;
   const t0 = performance.now();
   try{ mode==='dither' ? renderDither() : mode==='ascii' ? renderAscii() : renderImage(); }
   catch(err){ console.error(err); toast('Render failed — see console'); }
   lastCost = performance.now()-t0;
-  const preview = previewCols() !== Infinity;
+  if(!preview) lastFullCost = lastCost;   // only a full render measures a full render
   $('#st-time').textContent = preview
     ? `preview · ${Math.round(lastCost)}ms`
     : `rendered in ${Math.round(lastCost)}ms`;
@@ -3381,6 +3490,12 @@ $('#algonote').addEventListener('click',()=>{
   const body=$('#algobody'), open=body.classList.toggle('hidden');
   $('#algonote .caret').textContent = open ? '▸' : '▾';
 });
+$('#algosearch').addEventListener('input', renderAlgoList);
+$$('#algofacets .chip').forEach(b=>b.addEventListener('click',()=>{
+  algoFam = b.dataset.fam;
+  $$('#algofacets .chip').forEach(x=>x.classList.toggle('on', x.dataset.fam===algoFam));
+  renderAlgoList();
+}));
 $$('#rampquick .row').forEach(b=>b.addEventListener('click',()=>{ $('#charset').value=b.dataset.cs; schedule(); pushHistory(true); }));
 $$('#ncolquick button').forEach(b=>b.addEventListener('click',()=>{ $('#ncol').value=b.dataset.n; schedule(); }));
 $$('#scalequick button').forEach(b=>b.addEventListener('click',()=>{
@@ -4081,6 +4196,7 @@ document.addEventListener('keydown',e=>{
 /* ---------- boot ---------- */
 $$('[data-kbd]').forEach(e=>{ e.textContent = kbd(e.dataset.kbd, e.hasAttribute('data-kbd-shift')); });
 syncOuts(); updateVisibility(); paintPalQuick(); paintSwatches(currentPalette());
+algoSig = thumbSig(); renderAlgoList();
 renderAlgoCard(); renderFontList(); pushHistory(true);
 </script>
 </body>

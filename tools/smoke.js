@@ -15,6 +15,9 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   await page.waitForTimeout(400);
 
   const fail = (msg) => { errors.push(msg); };
+  // #algo is hidden behind the thumbnail picker, so selectOption cannot reach it.
+  // Setting .value fires no change event, which is why schedule() is explicit.
+  page.setAlgo = a => page.evaluate(k => { document.querySelector('#algo').value = k; schedule(); }, a);
   const shot = process.argv.includes('--shots');
 
   // 1. boots clean, into the empty state
@@ -33,7 +36,7 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
     await page.click(`#mode button[data-mode="${mode}"]`);
     await page.waitForTimeout(120);
     for (const a of algos) {
-      await page.selectOption('#algo', a);
+      await page.setAlgo(a);
       await page.waitForTimeout(45);
       const st = await page.evaluate(() => ({
         w: out.width, h: out.height, t: document.querySelector('#st-time').textContent,
@@ -46,7 +49,7 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
 
   // 4. every palette resolves
   await page.click('#mode button[data-mode="dither"]');
-  await page.selectOption('#algo', 'ed:fs');
+  await page.setAlgo('ed:fs');
   const pals = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#palette option')).map(o => o.value));
   for (const p of pals) {
@@ -334,14 +337,34 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
       return { s, w: out.width };
     };
     dragging = false; const settled = sig();
-    // force the preview path: pretend the previous render was expensive
-    dragging = true; lastCost = 999; const preview = sig();
-    dragging = false; lastCost = 0; const after = sig();
-    return { settled, preview, after };
+    // force the preview path: pretend a full render was expensive
+    dragging = true; lastFullCost = 999; const preview = sig();
+    dragging = false; lastFullCost = 0; const after = sig();
+
+    // A real drag, unforced. Every frame of it has to stay a preview. Gating on
+    // the previous render's cost rather than a full render's made this alternate
+    // coarse/fine every frame — a cheap preview pulled the measurement under the
+    // threshold, the next frame went full, and back — which is the bug that read
+    // as the picture not tracking the slider.
+    dragging = false; render();          // settle first, so a full cost is on record
+    dragging = true;
+    const run = [];
+    for (let i = 0; i < 6; i++) {
+      document.querySelector('#contrast').value = String(i * 5);
+      render();
+      run.push(out.width);
+    }
+    dragging = false;
+    document.querySelector('#contrast').value = '0';
+    return { settled, preview, after, run };
   });
   if (perf.settled.s !== perf.after.s) fail('a settled render differs before and after a drag');
   if (perf.preview.w >= perf.settled.w) fail('preview render was not smaller than the settled one');
-  console.log(`  drag preview renders at ${perf.preview.w}px vs ${perf.settled.w}px settled, and settles identically`);
+  if (new Set(perf.run).size !== 1)
+    fail('the preview grid oscillated during a drag: ' + perf.run.join(', '));
+  if (perf.run[0] >= perf.settled.w)
+    fail(`a drag rendered at the full ${perf.run[0]}px instead of previewing`);
+  console.log(`  drag preview renders at ${perf.preview.w}px vs ${perf.settled.w}px settled, holds steady across a drag, and settles identically`);
 
   // 6j. image mode: the same pipeline with the quantizer taken off. It has to
   //     run every effect pass, keep continuous tone, treat the working size as
@@ -522,6 +545,49 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   if (!fonts.count.includes(String(fonts.installed))) fail(`#fontcount reads "${fonts.count}", not the installed count`);
   if (!fonts.embedded) fail('no catalogue family is actually embedded — IBM Plex Mono should be');
   console.log(`  font picker: ${fonts.installed}/${fonts.total} resolve here (${fonts.embedded} embedded), installed sort first`);
+
+  // 6n. the algorithm picker. Every row previews the real algorithm, so the
+  //     guard is that the thumbnails actually differ from one another — a
+  //     placeholder, or a bug drawing the same key 52 times, would look fine.
+  const picker = await page.evaluate(() => {
+    const rows = () => Array.from(document.querySelectorAll('#algolist .row'));
+    const reset = () => { algoFam = 'all'; document.querySelector('#algosearch').value = ''; renderAlgoList(); };
+    reset();
+    const all = rows().length;
+    const sigOf = k => {
+      const c = document.createElement('canvas'); c.width = 26; c.height = 20;
+      algoThumbTo(k, c);
+      const d = c.getContext('2d').getImageData(0, 0, 26, 20).data;
+      let s = 0; for (let i = 0; i < d.length; i += 4) s = (s * 31 + d[i] * 7) >>> 0;
+      return s;
+    };
+    const distinct = new Set(ALGO_KEYS.map(sigOf)).size;
+    algoFam = 'ed'; renderAlgoList(); const ed = rows().length;
+    algoFam = 'ord'; renderAlgoList(); const ord = rows().length;
+    reset();
+    document.querySelector('#algosearch').value = 'atkinson'; renderAlgoList();
+    const searched = rows().map(r => r.dataset.algo);
+    document.querySelector('#algosearch').value = 'nothingmatchesthis'; renderAlgoList();
+    const emptyRows = rows().length, emptyNote = document.querySelector('#algoempty').classList.contains('on');
+    reset();
+    // clicking a row must drive the same hidden select the rest of the file reads
+    const before = document.querySelector('#algo').value;
+    rows().find(r => r.dataset.algo === 'ord:bayer8').click();
+    const picked = document.querySelector('#algo').value;
+    document.querySelector('#algo').value = before; renderAlgoList();
+    return { all, ed, ord, distinct, searched, emptyRows, emptyNote, picked,
+             total: ALGO_KEYS.length, selHidden: document.querySelector('#algo').classList.contains('hidden') };
+  });
+  if (picker.all !== picker.total) fail(`picker listed ${picker.all} of ${picker.total} algorithms`);
+  if (picker.ed + picker.ord !== picker.total) fail(`family facets cover ${picker.ed + picker.ord} of ${picker.total}`);
+  if (!picker.ed || !picker.ord) fail('a family facet matched nothing');
+  if (picker.distinct < picker.total * 0.6)
+    fail(`only ${picker.distinct} of ${picker.total} thumbnails are distinct — they are not rendering per algorithm`);
+  if (!picker.searched.includes('ed:atkinson')) fail('search for "atkinson" did not find it');
+  if (picker.emptyRows || !picker.emptyNote) fail('an empty search did not show the empty note');
+  if (picker.picked !== 'ord:bayer8') fail(`clicking a row set #algo to ${picker.picked}`);
+  if (!picker.selHidden) fail('the raw #algo select is still visible beside the picker');
+  console.log(`  algorithm picker: ${picker.all} rows, ${picker.distinct} distinct previews, facets and search filter`);
 
   // 7. config round-trip — the check that actually catches a missing CFG_IDS entry
   const rt = await page.evaluate(() => {

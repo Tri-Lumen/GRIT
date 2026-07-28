@@ -82,7 +82,7 @@ palettes, batch export) with concrete implementation sketches.
 
 | Issue | Notes |
 |---|---|
-| Input lag on large grids | Drag previews at a reduced grid and over-budget renders coalesce input; the settled render is still single-threaded |
+| Input lag on large grids | Drag previews at a reduced grid and over-budget renders coalesce input; the settled render is still single-threaded. The preview gate reads `lastFullCost`, never `lastCost` — see the gotcha in CLAUDE.md, it oscillated badly |
 | Text panel slow at high column counts | No virtualization |
 | `stepGuess()` is a heuristic | Ordered spread on arbitrary colour palettes is approximate, not principled |
 | Non-monospace fonts break alignment | Font list is monospace-only, but a custom family could be forced in |
