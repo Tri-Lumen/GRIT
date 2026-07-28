@@ -984,15 +984,28 @@
         <div class="progtrack"><i id="progbar"></i></div>
       </div>
       <div style="display:flex; flex-direction:column; gap:12px">
-        <div class="line">
-          <span class="ll">Scale</span>
-          <div class="chips" id="scalequick">
-            <button class="chip" data-s="1">1×</button><button class="chip" data-s="2">2×</button>
-            <button class="chip" data-s="4">4×</button><button class="chip" data-s="8">8×</button>
+        <label class="sld" id="wrap-sizemode"><span class="lab">Size</span>
+          <select id="sizemode">
+            <option value="multiplier">Multiply the cell size</option>
+            <option value="longedge">Fit a long edge</option>
+            <option value="preset">Fit a standard size</option>
+          </select></label>
+        <div id="wrap-mult">
+          <div class="line">
+            <span class="ll">Scale</span>
+            <div class="chips" id="scalequick">
+              <button class="chip" data-s="1">1×</button><button class="chip" data-s="2">2×</button>
+              <button class="chip" data-s="4">4×</button><button class="chip" data-s="8">8×</button>
+              <button class="chip" data-s="16">16×</button>
+            </div>
           </div>
+          <div class="sld" style="margin-top:12px"><span class="lab">Export scale <span><b data-out="oscale">1</b>×</span></span>
+            <input type="range" id="oscale" min="1" max="16" value="1"></div>
         </div>
-        <div class="sld"><span class="lab">Export scale <span><b data-out="oscale">1</b>×</span></span>
-          <input type="range" id="oscale" min="1" max="8" value="1"></div>
+        <label class="sld hidden" id="wrap-targetpx"><span class="lab">Long edge (px)</span>
+          <input type="number" id="targetpx" min="64" max="8192" step="1" value="2048"></label>
+        <label class="sld hidden" id="wrap-sizepreset"><span class="lab">Standard size</span>
+          <select id="sizepreset"></select></label>
         <label class="line" id="wrap-atrans"><span class="ll">Transparent background</span>
           <input type="checkbox" class="tgl" id="atrans"></label>
         <label class="line"><span class="ll">Copy to clipboard instead</span>
@@ -2200,9 +2213,57 @@ function cmykScreen(d, w, h, opts){
   }
 }
 
+/* ---------- output scale ----------
+   The export scale is always a whole number. Nearest-neighbour output with a
+   fractional scale gives cells of uneven width, which is exactly the resampling
+   mush the tool exists to avoid — so a target size picks the largest integer
+   multiplier that *fits inside* it and reports what actually came out, rather
+   than letterboxing or resampling to hit the number exactly. */
+const SIZE_PRESETS = [
+  {k:'sq1080',  n:"Square 1080",      w:1080, h:1080, note:"social"},
+  {k:'pt1350',  n:"Portrait 1350",    w:1080, h:1350, note:"social"},
+  {k:'story',   n:"Story 1920",       w:1080, h:1920, note:"social"},
+  {k:'hd',      n:"HD 1920×1080",     w:1920, h:1080, note:"screen"},
+  {k:'uhd',     n:"4K 3840×2160",     w:3840, h:2160, note:"screen"},
+  {k:'a4',      n:"A4 at 300dpi",     w:2480, h:3508, note:"print"},
+  {k:'a3',      n:"A3 at 300dpi",     w:3508, h:4961, note:"print"},
+  {k:'letter',  n:"Letter at 300dpi", w:2550, h:3300, note:"print"},
+];
+(function(){
+  const s = $('#sizepreset');
+  SIZE_PRESETS.forEach(P=>{
+    const o=document.createElement('option'); o.value=P.k; o.textContent=`${P.n} · ${P.note}`; s.appendChild(o);
+  });
+  s.value = 'sq1080';
+})();
+// the output size at 1×, before any export multiplier
+function baseOutSize(){
+  if(mode==='ascii') return {w:out.width/Math.max(1,lastScale), h:out.height/Math.max(1,lastScale)};
+  const cols = Math.round(num('cols'));
+  const rows = Math.max(1, Math.round(cols * (img ? img.height/img.width : 0.75)));
+  const cell = Math.round(num('cell'));
+  return {w:cols*cell, h:rows*cell};
+}
+let lastScale = 1;
+function exportScale(){
+  const mode_ = v('sizemode');
+  if(mode_==='multiplier') return Math.max(1, Math.round(num('oscale')));
+  const b = baseOutSize();
+  if(!b.w || !b.h) return 1;
+  let tw, th;
+  if(mode_==='longedge'){
+    const t = Math.max(64, Math.round(num('targetpx')));
+    if(b.w >= b.h){ tw=t; th=Infinity; } else { th=t; tw=Infinity; }
+  } else {
+    const P = SIZE_PRESETS.find(p=>p.k===v('sizepreset')) || SIZE_PRESETS[0];
+    tw=P.w; th=P.h;
+  }
+  return Math.max(1, Math.floor(Math.min(tw/b.w, th/b.h)));
+}
+
 /* ---------- render: dither ---------- */
 function renderDither(){
-  const cols = Math.round(num('cols'));
+  const cols = Math.min(previewCols(), Math.round(num('cols')));
   const rows = Math.max(1, Math.round(cols * img.height/img.width));
   work.width=cols; work.height=rows;
   wctx.imageSmoothingEnabled = true;
@@ -2227,7 +2288,7 @@ function renderDither(){
   wctx.putImageData(d,0,0);
   lastGrid = {cols, rows, cell:Math.round(num('cell')), data:new Uint8ClampedArray(d.data)};
   lastLines = null; lastColors = null;
-  let cell = Math.round(num('cell')) * Math.round(num('oscale'));
+  let cell = Math.round(num('cell')) * exportScale();
   const LIMIT = 8192;
   while(cell>1 && (cols*cell>LIMIT || rows*cell>LIMIT)) cell--;
   out.width = cols*cell; out.height = rows*cell;
@@ -2268,7 +2329,7 @@ function denseOnBright(){
 }
 function renderAscii(){
   const key = v('charset'), isBraille = !!CHARSETS[key].braille;
-  const cols = Math.round(num('acols'));
+  const cols = Math.min(previewCols(), Math.round(num('acols')));
   const fsize = num('fsize'), lhf = num('lh');
   const fam = v('font');
   octx.font = `${fsize}px ${fam}`;
@@ -2349,10 +2410,11 @@ function renderAscii(){
   const pad = Math.round(fsize*0.5);
   out.width = Math.ceil(cols*cw)+pad*2;
   out.height = Math.ceil(rows*chh)+pad*2;
-  let scale = Math.round(num('oscale'));
+  let scale = exportScale();
   const LIMIT = 8192;
   while(scale>1 && (out.width*scale>LIMIT || out.height*scale>LIMIT)) scale--;
   if(scale>1){ out.width*=scale; out.height*=scale; }
+  lastScale = scale;
   octx.setTransform(scale,0,0,scale,0,0);
   octx.clearRect(0,0,out.width,out.height);
   if(!v('atrans')){ octx.fillStyle=v('abg'); octx.fillRect(0,0,out.width,out.height); }
@@ -2426,8 +2488,25 @@ function renderAlgoCard(){
   try{ algoThumb(key); }catch(e){ /* thumbnail is decorative — never block a render */ }
 }
 
-/* ---------- driver ---------- */
-let queued=false;
+/* ---------- driver ----------
+   Two throttles, both driven by what the last render actually cost rather than
+   by a fixed guess:
+
+   1. While a slider is being dragged, an expensive setup renders at a reduced
+      grid. The pipeline is resolution-independent, so this is just a cap on
+      `cols` — the texture is coarser for the duration of the drag and the full
+      render lands on release.
+   2. If a render overran a frame, input is coalesced for a short window instead
+      of trying again immediately. rAF alone does not help here: it fires at
+      60Hz regardless of whether the last render took 4ms or 400ms, so a heavy
+      setup would queue a fresh render behind every keystroke.
+
+   Both are no-ops on a cheap render, which is the common case. */
+let queued=false, lastCost=0, dragging=false, coalesceUntil=0;
+const PREVIEW_MAX_COLS = 220;   // roughly the point where a 12-tap kernel stays interactive
+function previewCols(){
+  return dragging && lastCost > 40 ? PREVIEW_MAX_COLS : Infinity;
+}
 function render(){
   syncOuts();
   updateVisibility();
@@ -2442,13 +2521,33 @@ function render(){
   const t0 = performance.now();
   try{ mode==='dither' ? renderDither() : renderAscii(); }
   catch(err){ console.error(err); toast('Render failed — see console'); }
-  $('#st-time').textContent = `rendered in ${Math.round(performance.now()-t0)}ms`;
+  lastCost = performance.now()-t0;
+  const preview = previewCols() !== Infinity;
+  $('#st-time').textContent = preview
+    ? `preview · ${Math.round(lastCost)}ms`
+    : `rendered in ${Math.round(lastCost)}ms`;
   applyZoom();
 }
 function schedule(){
-  if(queued) return; queued=true;
-  requestAnimationFrame(()=>{ queued=false; render(); });
+  if(queued) return;
+  queued=true;
+  const wait = Math.max(0, coalesceUntil - performance.now());
+  const go = ()=>requestAnimationFrame(()=>{
+    queued=false;
+    render();
+    // a render that overran a frame earns a quiet window before the next one
+    coalesceUntil = lastCost > 40 ? performance.now() + Math.min(200, lastCost*1.5) : 0;
+  });
+  wait ? setTimeout(go, wait) : go();
 }
+// a pointer down on any slider means a drag is starting; the full render lands
+// on release, or on the next tick if the pointer was never down (keyboard, ⌘K)
+['pointerdown','keydown'].forEach(ev=>$('#rail').addEventListener(ev, e=>{
+  if(e.target.type==='range'){ dragging = ev==='pointerdown'; }
+}));
+['pointerup','pointercancel'].forEach(ev=>document.addEventListener(ev, ()=>{
+  if(dragging){ dragging=false; schedule(); }
+}));
 function updateVisibility(){
   const isAscii = mode==='ascii';
   $('#blk-ramp').classList.toggle('hidden', !isAscii);
@@ -2494,7 +2593,8 @@ function updateVisibility(){
   $$('#colormode button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.cm===colormode)));
   $$('#rampquick .row').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.cs===v('charset'))));
   $$('#ncolquick button').forEach(b=>b.classList.toggle('on', b.dataset.n===String(Math.round(num('ncol')))));
-  $$('#scalequick button').forEach(b=>b.classList.toggle('on', b.dataset.s===String(Math.round(num('oscale')))));
+  $$('#scalequick button').forEach(b=>b.classList.toggle('on',
+    v('sizemode')==='multiplier' && b.dataset.s===String(Math.round(num('oscale')))));
   markFontSel();
   $('#blk-video').classList.toggle('hidden', !isVideo);
   $('#compare').setAttribute('aria-pressed', String(compareOn));
@@ -2523,7 +2623,8 @@ const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell
   'depth','palmap','rampcurve','dist',
   'htshape','htangle','htfreq','htink','htgain','cmyk','ucr',
   'fxorder','fxchroma','fxjpeg','fxwave','fxsort','fxslice','fxvig','fxseed',
-  'tvar','tvamt','choff','cdepth'];
+  'tvar','tvamt','choff','cdepth',
+  'sizemode','targetpx','sizepreset'];
 // A control listed here without a matching element used to throw on boot. It is
 // the single easiest mistake to make in this file, so both directions skip
 // quietly instead — an id that has not landed yet simply does not round-trip.
@@ -3071,7 +3172,10 @@ $('#algonote').addEventListener('click',()=>{
 });
 $$('#rampquick .row').forEach(b=>b.addEventListener('click',()=>{ $('#charset').value=b.dataset.cs; schedule(); pushHistory(true); }));
 $$('#ncolquick button').forEach(b=>b.addEventListener('click',()=>{ $('#ncol').value=b.dataset.n; schedule(); }));
-$$('#scalequick button').forEach(b=>b.addEventListener('click',()=>{ $('#oscale').value=b.dataset.s; schedule(); }));
+$$('#scalequick button').forEach(b=>b.addEventListener('click',()=>{
+  $('#sizemode').value='multiplier'; $('#oscale').value=b.dataset.s; schedule(); markFormat(); updateExportSummary();
+}));
+$$('#sizemode, #targetpx, #sizepreset').forEach(e=>e.addEventListener('input',()=>{ schedule(); markFormat(); updateExportSummary(); }));
 $('#extract').addEventListener('click',()=>{
   if(!img) return toast('Load an image first');
   extracted = extractPalette(Math.round(num('ncol')));
@@ -3515,14 +3619,17 @@ function markFormat(){
   $$('#fmt button, #fmtanim button, #fmtbatch button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
   const anim = ANIM_FMTS.includes(expFormat) || expFormat==='batch';
   // scale, transparency and clipboard don't apply to a clip encode
-  $('#scalequick').closest('.line').classList.toggle('hidden', anim);
-  $('#oscale').closest('.sld').classList.toggle('hidden', anim);
+  const sm = v('sizemode');
+  $('#wrap-sizemode').classList.toggle('hidden', anim);
+  $('#wrap-mult').classList.toggle('hidden', anim || sm!=='multiplier');
+  $('#wrap-targetpx').classList.toggle('hidden', anim || sm!=='longedge');
+  $('#wrap-sizepreset').classList.toggle('hidden', anim || sm!=='preset');
   $('#toclip').closest('.line').classList.toggle('hidden', anim || expFormat==='zip');
   $('#expgo').textContent = expFormat==='batch' ? 'Export all' : (anim ? 'Encode' : 'Save it');
 }
 function fmtBytes(kb){ return kb>1024 ? (kb/1024).toFixed(1)+' MB' : Math.max(1,Math.round(kb))+' KB'; }
 function updateExportSummary(){
-  const s = Math.round(num('oscale'));
+  const s = exportScale();
   const suffix = s>1 ? `@${s}x` : '';
   const name = $('#expname'), dims = $('#expdims');
   if(expFormat==='txt'){
@@ -3544,7 +3651,17 @@ function updateExportSummary(){
   } else {
     name.textContent = `${imgName}-${mode}${suffix}.png`;
     // PNG of flat dithered colour compresses hard; ~0.35 bytes/px is a fair guess
-    dims.textContent = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
+    let line = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
+    // say plainly what a target size actually produced — the scale is always a
+    // whole number, so the result usually sits inside the target rather than on it
+    const sm = v('sizemode');
+    if(sm==='preset'){
+      const P = SIZE_PRESETS.find(p=>p.k===v('sizepreset'));
+      if(P) line += ` · ${s}× · fits ${P.n}`;
+    } else if(sm==='longedge'){
+      line += ` · ${s}× · long edge asked for ${Math.round(num('targetpx'))}px`;
+    }
+    dims.textContent = line;
   }
 }
 $$('#fmt button, #fmtanim button, #fmtbatch button').forEach(b=>b.addEventListener('click',()=>{
