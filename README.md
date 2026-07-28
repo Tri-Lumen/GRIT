@@ -69,7 +69,10 @@ generate one.
 - **A filterable font picker** — 34 monospace families, searchable and faceted by
   classification (system, typewriter, terminal, humanist, geometric) and by what
   actually works on your machine: whether the family is installed, and whether its
-  block and braille glyphs hold the monospace grid
+  block and braille glyphs hold the monospace grid. Only IBM Plex Mono is embedded
+  in the file — the rest are the fonts *you* already have, so the list is a survey
+  of your machine, not a bundle. Families that resolve sort to the top and the
+  count reads "N of 34 here"; the rest are labelled and fall back to a system mono
 - Size, line height; flat, image-sampled, or palette-quantized ink; solid or
   transparent paper
 - Ramp direction follows ink/paper contrast automatically

@@ -269,6 +269,17 @@ has dither texture instead of banding.
 - **Font availability can't be measured at boot.** `document.fonts.ready` has not
   settled, so the embedded faces measure as missing. The font picker recomputes
   once it resolves.
+- **Only two of the 34 catalogue fonts are embedded.** Space Grotesk and IBM Plex
+  Mono ship as base64 woff2; the other 32 `FONTS` entries are references to
+  system faces, and on a typical machine most of them will not resolve. This
+  reliably reads as "the fonts are missing from the file" — it isn't, and it
+  can't be fixed by embedding more. The two embedded faces are a *latin subset*
+  and still cost ~88KB; ASCII art needs block and braille coverage, which can't
+  be subset that way, so 32 more families is tens of megabytes. Several
+  (Consolas, Menlo, Monaco, SF Mono, Andale Mono, Lucida Console) are also
+  proprietary and can't legally be redistributed embedded. The picker measures
+  instead: installed families sort to the top, the rest are labelled "not
+  installed", and `#fontcount` reads "N of M here".
 
 ## Current state
 

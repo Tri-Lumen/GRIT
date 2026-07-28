@@ -1554,7 +1554,26 @@ const CHARSETS = {
 
 /* ---------- font catalogue ----------
    `v` strings are the CSS stacks written into #font. The first six keep their exact
-   original values so settings JSON copied from older builds still resolves. */
+   original values so settings JSON copied from older builds still resolves.
+
+   These are *references*, not embedded faces. Only two families ship inside this
+   file — Space Grotesk and IBM Plex Mono, as base64 woff2 in the <style> block —
+   and everything else here resolves against what the machine already has. That is
+   not an oversight, and it is not fixable by adding more @font-face blocks:
+
+     - Size. The two embedded faces are a latin subset and still cost ~88KB. ASCII
+       art needs block and braille coverage, so these could not be subset the same
+       way; embedding 32 families at full coverage is tens of megabytes, in a file
+       whose whole premise is that you download one HTML and open it.
+     - Licensing. Consolas, Menlo, Monaco, SF Mono, Andale Mono and Lucida Console
+       are proprietary system faces. Redistributing them embedded is not permitted,
+       whatever the file size.
+
+   So the picker measures rather than promises: isInstalled() tells you what
+   resolves here, renderFontList() floats those to the top and labels the rest
+   "not installed", and the Installed facet filters to them. A family that is not
+   present falls back to a system mono — it does not break, it just isn't the font
+   you picked. */
 const FONTS = [
   {n:"System mono",        v:'ui-monospace, Menlo, Consolas, monospace',   t:'system'},
   {n:"Generic monospace",  v:'monospace',                                   t:'system'},
@@ -3289,7 +3308,13 @@ function renderFontList(){
     if(fontProps.has('braille') && !m.braille) return false;
     if(q && !(F.n+' '+F.t).toLowerCase().includes(q)) return false;
     return true;
-  });
+  // Only two of these families are embedded; the other 32 are references to
+  // fonts the machine may or may not have (see the FONTS comment for why). On a
+  // typical machine most of the list is therefore unusable, and in catalogue
+  // order that reads as a broken picker rather than as a survey. Float the ones
+  // that actually resolve to the top — sort is stable, so catalogue order still
+  // holds within each group, and nothing is hidden.
+  }).sort((a,b)=> (meta.get(b.v).installed?1:0) - (meta.get(a.v).installed?1:0));
   const w=$('#fontlist'); w.innerHTML='';
   shown.forEach(F=>{
     const m = meta.get(F.v);
@@ -3311,7 +3336,10 @@ function renderFontList(){
     w.appendChild(b);
   });
   $('#fontempty').classList.toggle('on', shown.length===0);
-  $('#fontcount').textContent = `${shown.length}/${FONTS.length}`;
+  // count what is usable, not what is listed — that is the question the number
+  // is actually being asked
+  const avail = shown.filter(F=>meta.get(F.v).installed).length;
+  $('#fontcount').textContent = `${avail} of ${shown.length} here`;
 }
 // cheap per-render pass: keep the highlight honest without rebuilding the list
 function markFontSel(){

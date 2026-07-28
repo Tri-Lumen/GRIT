@@ -491,6 +491,38 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   if (keys.here && /Ctrl\+/.test(keys.ui)) fail('a Ctrl label is printed on a Mac');
   console.log(`  shortcut labels follow the platform (this one: ${keys.here ? 'mac' : 'ctrl'}), ${keys.labelled} declared`);
 
+  // 6m. the font picker is a survey of the machine, not a bundle: 32 of the 34
+  //     families are references to system faces. Installed ones must sort to the
+  //     top so the list does not read as broken, and the rest must stay reachable.
+  const fonts = await page.evaluate(() => {
+    fontProps.clear(); fontClass = 'all';
+    document.querySelector('#fontsearch').value = '';
+    renderFontList();
+    const meta = ensureFontMeta();
+    const rows = Array.from(document.querySelectorAll('#fontlist .row'));
+    const flags = rows.map(r => meta.get(r._f).installed);
+    return {
+      total: FONTS.length,
+      listed: rows.length,
+      installed: flags.filter(Boolean).length,
+      // no installed family may appear after a missing one
+      sorted: flags.every((v, i) => i === 0 || flags[i - 1] || !v),
+      offClass: rows.filter(r => r.classList.contains('off')).length,
+      count: document.querySelector('#fontcount').textContent,
+      embedded: FONTS.filter(F => {
+        const bare = F.v.split(',')[0].trim().replace(/^["']|["']$/g, '');
+        return Array.from(document.fonts).some(f => f.family === bare);
+      }).length,
+    };
+  });
+  if (fonts.listed !== fonts.total) fail(`the unfiltered picker listed ${fonts.listed} of ${fonts.total} families`);
+  if (!fonts.sorted) fail('an installed font sorted below a missing one');
+  if (!fonts.installed) fail('no font in the catalogue resolved at all — the measurement is broken');
+  if (fonts.offClass !== fonts.total - fonts.installed) fail('missing fonts are not all marked .off');
+  if (!fonts.count.includes(String(fonts.installed))) fail(`#fontcount reads "${fonts.count}", not the installed count`);
+  if (!fonts.embedded) fail('no catalogue family is actually embedded — IBM Plex Mono should be');
+  console.log(`  font picker: ${fonts.installed}/${fonts.total} resolve here (${fonts.embedded} embedded), installed sort first`);
+
   // 7. config round-trip — the check that actually catches a missing CFG_IDS entry
   const rt = await page.evaluate(() => {
     const before = JSON.stringify(readCfg());
