@@ -84,7 +84,7 @@ EOF
 
 | Region | Contents |
 |---|---|
-| `@font-face` | Space Grotesk + IBM Plex Mono as base64 woff2. ~88KB, latin subset. Do not hand-edit; regenerate. |
+| `@font-face` | Space Grotesk + IBM Plex Mono (latin subset, for the UI) hand-embedded, then 12 art faces at full coverage between generated markers. ~3MB. Regenerate with `tools/fonts.py --write`; never hand-edit. |
 | `<style>` | All CSS. Tokens on `:root`, then the block kit. **See `docs/STYLE_GUIDE.md` before touching any of it.** |
 | `#titlebar` | Window chrome: traffic lights, document title, `⌘K`. |
 | `<aside id="rail">` | Tabs (Adjust / Presets / History), the Basic/All disclosure toggle, and every control as `.blk` blocks. Restyles into a floating glass panel in focus mode. |
@@ -97,7 +97,7 @@ EOF
 | `algorithm copy` | `ALGO_INFO` — blurb / pro / con / "best for" per algorithm, for the info card. |
 | `palettes` | `PALETTES` map, `PAL_QUICK` (the five surfaced swatches). |
 | `charsets` | `CHARSETS` map. |
-| `font catalogue` | `FONTS` + `FONT_CLASSES` for the filterable font picker. |
+| `font catalogue` | `FONT_COVER` (generated), `FONTS` + `FONT_CLASSES` for the filterable font picker. |
 | `looks (presets)` | `LOOKS` — named partial configs applied by the Presets tab. |
 | `state` | Module-level `img`, `mode`, `colormode`, offscreen canvases `work`/`samp`, output `out`. |
 | `helpers` | `v()` / `num()` read control values by id. `toast()`. `syncOuts()` updates slider readouts. |
@@ -285,17 +285,32 @@ has dither texture instead of banding.
 - **Font availability can't be measured at boot.** `document.fonts.ready` has not
   settled, so the embedded faces measure as missing. The font picker recomputes
   once it resolves.
-- **Only two of the 34 catalogue fonts are embedded.** Space Grotesk and IBM Plex
-  Mono ship as base64 woff2; the other 32 `FONTS` entries are references to
-  system faces, and on a typical machine most of them will not resolve. This
-  reliably reads as "the fonts are missing from the file" — it isn't, and it
-  can't be fixed by embedding more. The two embedded faces are a *latin subset*
-  and still cost ~88KB; ASCII art needs block and braille coverage, which can't
-  be subset that way, so 32 more families is tens of megabytes. Several
-  (Consolas, Menlo, Monaco, SF Mono, Andale Mono, Lucida Console) are also
-  proprietary and can't legally be redistributed embedded. The picker measures
-  instead: installed families sort to the top, the rest are labelled "not
-  installed", and `#fontcount` reads "N of M here".
+- **Thirteen of the 30 catalogue fonts are embedded, at full coverage.**
+  `tools/fonts.py` pulls them from the Ubuntu archive and writes base64 woff2
+  between markers in `<style>`. Regenerate with `--write`; never hand-edit the
+  block. The six proprietary faces that used to be listed (Consolas, Menlo,
+  Monaco, SF Mono, Andale Mono, Lucida Console) are gone — they cannot legally
+  be redistributed embedded at any file size, and the catalogue names an open
+  replacement for each instead.
+- **Never source embeddable fonts from Google Fonts or Fontsource.** Both serve
+  *subsets*. A "latin" woff2 has no block elements, no box drawing and no
+  braille — exactly the glyphs ASCII art is made of — so embedding one silently
+  shears the grid on half the charsets. apt ships the upstream files intact.
+- **Glyph coverage cannot be measured in the browser.** Once the browser
+  substitutes a missing glyph from the fallback chain, any measurement describes
+  the fallback, not the family — which reported Ogham as *absent* from Unifont
+  (it is there, correctly double-width) and *present* in latin-only faces. So
+  coverage is generated: `FONT_COVER` comes from `tools/fonts.py`, `cov` on a
+  `FONTS` entry covers the hand-embedded UI faces, and anything else is marked
+  unknown and claims nothing. `gridSafe()` still answers a different and real
+  question — is this glyph M-width — which is about layout, not coverage.
+- **A double-width ramp is not a broken ramp.** `cellWidth()` sizes the cell
+  from the glyphs the charset will actually draw, not from `'M'`. Ogham and the
+  CJK density sets advance twice as far as `'M'`, and the flat-ink path draws a
+  whole row as one `fillText`, so an `'M'`-sized cell laid the row out at half
+  the width it needed and ran it off the canvas. What actually shears is a ramp
+  disagreeing with *itself* — `rampShears()` — which is what per-glyph fallback
+  produces.
 
 ## Current state
 

@@ -58,21 +58,26 @@ generate one.
 
 ## ASCII mode
 
-- **34 character sets** in seven categories — classic, blocks, braille (packs a
+- **35 character sets** in seven categories — classic, blocks, braille (packs a
   2×4 dither grid into every glyph — highest detail per cell, still copyable as
-  text), technical, geometric, language (katakana, runic, Greek, Cyrillic,
-  hanzi), games — plus a custom ramp field
+  text), technical, geometric, language (katakana, runic, **Ogham**, Greek,
+  Cyrillic, hanzi), games — plus a custom ramp field
 - **Character depth** narrows the ramp to its first N steps, and **character
   offset** slides the whole luminance-to-glyph mapping
 - The character ramp is itself dithered with whichever algorithm is selected, so
   you get texture instead of banding
-- **A filterable font picker** — 34 monospace families, searchable and faceted by
-  classification (system, typewriter, terminal, humanist, geometric) and by what
-  actually works on your machine: whether the family is installed, and whether its
-  block and braille glyphs hold the monospace grid. Only IBM Plex Mono is embedded
-  in the file — the rest are the fonts *you* already have, so the list is a survey
-  of your machine, not a bundle. Families that resolve sort to the top and the
-  count reads "N of 34 here"; the rest are labelled and fall back to a system mono
+- **A filterable font picker** — 30 monospace families, thirteen of them embedded
+  in the file at full glyph coverage, so they work on any machine with nothing
+  installed. Searchable, faceted by classification (system, typewriter, terminal,
+  humanist, geometric) and by coverage (blocks, braille, runic, Ogham). Every row
+  previews its own letterforms and carries a tag for what it *lacks* — "no
+  braille", "latin only" — taken from the fonts' own glyph tables rather than
+  guessed. Families that resolve sort to the top; the rest fall back to a system
+  mono and say so
+- **Ogham and Runic actually render.** Both are carried by embedded faces, and
+  the cell is sized from the character set rather than from `M`, so Ogham's
+  double-width glyphs sit on the grid instead of running off it. Pick a set your
+  font can't draw and the warning names one that can, with a button to switch
 - Size, line height; flat, image-sampled, or palette-quantized ink; solid or
   transparent paper
 - Ramp direction follows ink/paper contrast automatically

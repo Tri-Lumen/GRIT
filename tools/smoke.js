@@ -589,6 +589,72 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   if (!picker.selHidden) fail('the raw #algo select is still visible beside the picker');
   console.log(`  algorithm picker: ${picker.all} rows, ${picker.distinct} distinct previews, facets and search filter`);
 
+  // 6o. embedded fonts. The catalogue used to dangle families that cannot
+  //     legally be embedded and mostly do not resolve; the guarantees now are
+  //     that no proprietary name is left, that every family claiming to be
+  //     embedded really is, and that coverage is only asserted where it can be
+  //     known — a measured glyph describes the fallback, not the family.
+  const fonts2 = await page.evaluate(() => {
+    const meta = ensureFontMeta();
+    const loaded = new Set(); document.fonts.forEach(f => loaded.add(f.family));
+    const rows = FONTS.map(F => ({ n: F.n, v: F.v, e: !!F.e, ...meta.get(F.v) }));
+    const bare = F => F.v.split(',')[0].trim().replace(/^["']|["']$/g, '');
+    return {
+      total: FONTS.length,
+      proprietary: FONTS.filter(F => /Consolas|Menlo|Monaco|SF Mono|Andale|Lucida Console/.test(F.n)).map(F => F.n),
+      // a family flagged embedded must actually have a face in the document
+      unbacked: FONTS.filter(F => F.e && !loaded.has(bare(F))).map(F => F.n),
+      // and must never measure as missing
+      notInstalled: rows.filter(r => r.e && !r.installed).map(r => r.n),
+      // coverage may only be claimed where FONT_COVER or an explicit cov says so
+      overclaimed: rows.filter(r => !r.known && (r.braille || r.ogham || r.runic || r.missing.length)).map(r => r.n),
+      braille: rows.filter(r => r.braille).map(r => r.n),
+      ogham: rows.filter(r => r.ogham).map(r => r.n),
+      runic: rows.filter(r => r.runic).map(r => r.n),
+      coverKeys: Object.keys(FONT_COVER).length,
+    };
+  });
+  if (fonts2.proprietary.length) fail('proprietary families still in the catalogue: ' + fonts2.proprietary.join(', '));
+  if (fonts2.unbacked.length) fail('families flagged e:true with no @font-face: ' + fonts2.unbacked.join(', '));
+  if (fonts2.notInstalled.length) fail('embedded families measuring as not installed: ' + fonts2.notInstalled.join(', '));
+  if (fonts2.overclaimed.length) fail('coverage claimed for unverifiable families: ' + fonts2.overclaimed.join(', '));
+  if (!fonts2.coverKeys) fail('FONT_COVER is empty — tools/fonts.py did not write the manifest');
+  for (const [k, list] of [['braille', fonts2.braille], ['ogham', fonts2.ogham], ['runic', fonts2.runic]])
+    if (!list.length) fail(`no embedded family carries ${k}`);
+  console.log(`  embedded fonts: ${fonts2.coverKeys} in the manifest, braille in ${fonts2.braille.length}, ogham in ${fonts2.ogham.length}, runic in ${fonts2.runic.length}`);
+
+  // 6p. the scripts the picker now promises. Both are only usable because the
+  //     cell is sized from the ramp rather than from 'M': Ogham is uniformly
+  //     double-width, and the flat-ink path draws a whole row as one string, so
+  //     an 'M'-sized cell laid the row out at half the width it needed.
+  const scripts = await page.evaluate(() => {
+    const uni = FONTS.find(F => F.n === 'GNU Unifont').v;
+    const run = (charset, font, acols) => {
+      applyCfg(DEFAULTS); mode = 'ascii';
+      document.querySelector('#charset').value = charset;
+      document.querySelector('#font').value = font;
+      document.querySelector('#acols').value = String(acols);
+      render();
+      const text = document.querySelector('#textout').value;
+      const lines = text.split('\n').filter(Boolean);
+      return {
+        distinct: new Set(Array.from(text.replace(/\n/g, ''))).size,
+        widths: [...new Set(lines.map(l => Array.from(l).length))],
+        w: out.width,
+      };
+    };
+    return { ogham: run('ogham', uni, 60), runic: run('runes', uni, 60), latin: run('classic', uni, 60) };
+  });
+  for (const k of ['ogham', 'runic']) {
+    const s = scripts[k];
+    if (s.distinct < 4) fail(`${k} produced only ${s.distinct} distinct glyphs — it is rendering tofu`);
+    if (s.widths.length !== 1) fail(`${k} rows came out ragged: ${s.widths.join(', ')}`);
+  }
+  // the proof that cellWidth() is reading the ramp: same columns, double the canvas
+  if (!(scripts.ogham.w > scripts.latin.w * 1.5))
+    fail(`ogham laid out at ${scripts.ogham.w}px against latin ${scripts.latin.w}px — the cell is still sized from 'M'`);
+  console.log(`  ogham & runic render evenly; ogham sizes its own cell (${scripts.ogham.w}px vs latin ${scripts.latin.w}px)`);
+
   // 7. config round-trip — the check that actually catches a missing CFG_IDS entry
   const rt = await page.evaluate(() => {
     const before = JSON.stringify(readCfg());

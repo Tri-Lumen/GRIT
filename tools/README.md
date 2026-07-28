@@ -28,6 +28,35 @@ Asserts, for every algorithm:
 
 Run it whenever you touch algorithm code.
 
+## `fonts.py` — the embedded typefaces
+
+```bash
+pip install fonttools brotli
+python3 tools/fonts.py --report     # coverage table, writes nothing
+python3 tools/fonts.py --write      # splice into index.html
+```
+
+Pulls twelve monospace families from the Ubuntu archive, converts them to woff2,
+and writes them as base64 `@font-face` rules between markers in `<style>`, plus a
+`FONT_COVER` manifest of what each one actually carries. The result is committed,
+so `index.html` still opens from `file://` with no build step — this is a
+generator you run occasionally, not a build.
+
+Two things it exists to prevent:
+
+- **Subsetted sources.** Google Fonts and Fontsource both serve latin subsets
+  with no block elements, no box drawing and no braille. Embedding one looks
+  fine until a charset made of those glyphs shears the grid. apt ships upstream
+  files intact, which is why the sources are apt packages.
+- **Guessed coverage.** The browser cannot tell you whether a family has a
+  glyph — once it substitutes from the fallback chain, every measurement
+  describes the fallback. The manifest is generated from the actual `cmap`, so
+  the picker states coverage instead of inferring it.
+
+Only families under a licence permitting embedded redistribution are listed.
+Consolas, Menlo, Monaco, SF Mono, Andale Mono and Lucida Console are deliberately
+absent and no file-size budget changes that.
+
 ## `smoke.js` — everything the DOM touches
 
 Needs Playwright, which is why it is opt-in:
