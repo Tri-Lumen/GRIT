@@ -628,10 +628,12 @@
         <div class="blk" id="blk-dither">
           <button class="sec" id="sec-dither">Dither</button>
           <div class="blkbody">
+            <div class="line" id="wrap-gridquick"><span class="ll">Scale</span>
+              <div class="chips" id="gridquick"></div></div>
             <div class="sld" id="wrap-cols"><span class="lab">Grid width (cells) <b data-out="cols">160</b></span>
-              <input type="range" id="cols" min="16" max="900" value="160"></div>
+              <input type="range" id="cols" min="16" max="1200" value="160"></div>
             <div class="sld" id="wrap-cell"><span class="lab">Cell size (px) <b data-out="cell">4</b></span>
-              <input type="range" id="cell" min="1" max="24" value="4"></div>
+              <input type="range" id="cell" min="1" max="48" value="4"></div>
             <div class="sld" id="wrap-strength"><span class="lab">Diffusion strength <b data-out="strength">100</b></span>
               <input type="range" id="strength" min="0" max="150" value="100"></div>
             <div class="sld" id="wrap-spread"><span class="lab">Pattern spread <b data-out="spread">1.00</b></span>
@@ -639,6 +641,39 @@
             <div class="sld"><span class="lab">Threshold bias <b data-out="bias">0</b></span>
               <input type="range" id="bias" min="-100" max="100" value="0"></div>
             <label class="line" id="wrap-serp"><span class="ll">Serpentine scan</span><input type="checkbox" class="tgl" id="serp" checked></label>
+          </div>
+        </div>
+
+        <div class="blk hidden" id="blk-halftone">
+          <button class="sec">Halftone screen</button>
+          <div class="blkbody">
+            <label class="sld"><span class="lab">Dot shape</span>
+              <select id="htshape">
+                <option value="round">Round</option>
+                <option value="square">Square</option>
+                <option value="diamond">Diamond</option>
+                <option value="ellipse">Elliptical</option>
+                <option value="line">Line</option>
+                <option value="cross">Cross</option>
+              </select></label>
+            <div class="line"><span class="ll">Screen angle</span>
+              <div class="chips" id="htanglequick">
+                <button class="chip" data-a="0">0°</button><button class="chip" data-a="15">15°</button>
+                <button class="chip" data-a="45">45°</button><button class="chip" data-a="75">75°</button>
+              </div></div>
+            <div class="sld"><span class="lab">Angle <span><b data-out="htangle">45</b>°</span></span>
+              <input type="range" id="htangle" min="0" max="90" value="45"></div>
+            <div class="sld"><span class="lab">Ruling (cells per dot) <b data-out="htfreq">6</b></span>
+              <input type="range" id="htfreq" min="2" max="32" value="6"></div>
+            <div class="sld"><span class="lab">Black ink <span><b data-out="htink">120</b>%</span></span>
+              <input type="range" id="htink" min="0" max="200" value="120"></div>
+            <div class="sld"><span class="lab">Mid-tone gain <b data-out="htgain">0</b></span>
+              <input type="range" id="htgain" min="-100" max="100" value="0"></div>
+            <label class="line" id="wrap-cmyk"><span class="ll">CMYK separation</span>
+              <input type="checkbox" class="tgl" id="cmyk"></label>
+            <div class="sld hidden" id="wrap-ucr"><span class="lab">Black generation <span><b data-out="ucr">70</b>%</span></span>
+              <input type="range" id="ucr" min="0" max="100" value="70"></div>
+            <div class="note">Rotated screens do not tile, so this costs a little more than a fixed matrix. CMYK screens each channel at its own angle and multiplies the plates back together.</div>
           </div>
         </div>
 
@@ -653,6 +688,25 @@
             <select id="palette" aria-label="All palettes"></select>
             <div class="sld" id="wrap-levels"><span class="lab">Levels <b data-out="levels">2</b></span>
               <input type="range" id="levels" min="2" max="16" value="2"></div>
+            <div class="sld"><span class="lab">Depth <b data-out="depth">0</b></span>
+              <input type="range" id="depth" min="0" max="32" value="0"></div>
+            <label class="sld" id="wrap-palmap"><span class="lab">Colour mapping</span>
+              <select id="palmap">
+                <option value="rgb">Nearest colour</option>
+                <option value="luma">Tonal scale</option>
+              </select></label>
+            <label class="sld" id="wrap-rampcurve"><span class="lab">Tone curve</span>
+              <select id="rampcurve">
+                <option value="linear">Linear</option>
+                <option value="gamma">Gamma (lifted)</option>
+                <option value="scurve">S-curve</option>
+                <option value="film">Film</option>
+              </select></label>
+            <label class="sld"><span class="lab">Colour distance</span>
+              <select id="dist">
+                <option value="fast">Fast (weighted RGB)</option>
+                <option value="perceptual">Perceptual (Oklab)</option>
+              </select></label>
             <div class="chips" id="wrap-duo" style="gap:8px">
               <label class="sld" style="flex:1"><span class="lab">Dark</span><input type="color" id="c0" value="#141414"></label>
               <label class="sld" style="flex:1"><span class="lab">Light</span><input type="color" id="c1" value="#f4f1e8"></label>
@@ -740,7 +794,23 @@
           <div class="sec">Looks</div>
           <div class="blkbody">
             <div class="rows" id="presetlist"></div>
-            <div class="note">A look sets a handful of controls and leaves the rest of your setup alone.</div>
+            <div class="note">A look is applied over the defaults, so the same look always gives you the same picture.</div>
+          </div>
+        </div>
+        <div class="blk">
+          <div class="sec">Randomize</div>
+          <div class="blkbody">
+            <div class="chips">
+              <button class="chip accent" id="randomize">Surprise me</button>
+              <button class="chip" id="shuffleadj">Shuffle sliders</button>
+            </div>
+            <div class="line" style="margin-top:10px"><span class="ll">Keep</span>
+              <div class="chips">
+                <button class="chip" id="lockpal" data-nobind aria-pressed="false">Palette</button>
+                <button class="chip" id="lockalgo" data-nobind aria-pressed="false">Algorithm</button>
+                <button class="chip" id="lockscale" data-nobind aria-pressed="false">Scale</button>
+              </div></div>
+            <div class="note">Locked controls are left alone by both buttons. <b>Shuffle sliders</b> moves only the adjustments and leaves the structure where it is.</div>
           </div>
         </div>
         <div class="blk">
@@ -750,7 +820,11 @@
               <button class="chip" id="copycfg">Copy settings</button>
               <button class="chip" id="pastecfg">Paste settings</button>
             </div>
-            <div class="note">Settings travel as a JSON string, so you can keep looks in a notes file and paste them back. Nothing is written to browser storage.</div>
+            <div class="chips" style="margin-top:8px">
+              <button class="chip" id="copypack">Copy preset pack</button>
+              <button class="chip" id="pastepack">Paste preset pack</button>
+            </div>
+            <div class="note">Settings travel as a JSON string, so you can keep looks in a notes file and paste them back. A <em>pack</em> carries several named looks at once. Nothing is written to browser storage.</div>
           </div>
         </div>
       </div>
@@ -1031,8 +1105,8 @@ const HT_SHAPES = {
   line:    (u,v)=>Math.abs(v),
   cross:   (u,v)=>Math.min(Math.abs(u), Math.abs(v))*2,
 };
-ORD.screen.make = function(){
-  const ang = num('htangle')*Math.PI/180;
+ORD.screen.make = function(w, h, angleDeg){
+  const ang = (angleDeg === undefined ? num('htangle') : angleDeg)*Math.PI/180;
   const freq = Math.max(2, num('htfreq'));
   const ink = num('htink')/100;
   const gain = num('htgain')/100;
@@ -1507,23 +1581,58 @@ function syncOuts(){
 function algoName(key){ const [k,n]=key.split(':'); return (k==='ed'?ED:ORD)[n].n; }
 function rgbcss(c){ return `rgb(${c[0]},${c[1]},${c[2]})`; }
 
-/* ---------- palette resolution ---------- */
+/* ---------- palette resolution ----------
+   Tone curves decide *where along the tone axis* a palette's stops land. Four
+   evenly spaced stops and four perceptually spaced ones look nothing alike at
+   low depths, which is what makes 4-level output read as deliberate rather
+   than crushed. */
+const CURVES = {
+  linear: t=>t,
+  gamma:  t=>Math.pow(t, 1/1.6),
+  scurve: t=>t*t*(3-2*t),
+  // ACES-ish: lifted toe, rolled shoulder
+  film:   t=>Math.min(1, Math.max(0, (t*(2.51*t+0.03))/(t*(2.43*t+0.59)+0.14))),
+};
+const palLum = c => 0.299*c[0]+0.587*c[1]+0.114*c[2];
+
+/* Resample any palette to N tonal stops, regardless of how many colours it
+   started with. Undersampling a 16-colour palette to four is the deliberate
+   "mismatch" look; oversampling interpolates between neighbouring stops rather
+   than repeating one, which is what buys the smoother gradients. */
+function applyDepth(pal, curve){
+  const D = Math.round(num('depth'));
+  if(D < 2 || D === pal.length) return pal;
+  const s = pal.slice().sort((a,b)=>palLum(a)-palLum(b));
+  const out = [];
+  for(let i=0;i<D;i++){
+    const t = curve(i/(D-1))*(s.length-1);
+    const lo = Math.floor(t), hi = Math.min(s.length-1, lo+1), f = t-lo;
+    out.push([0,1,2].map(j=>Math.round(s[lo][j] + (s[hi][j]-s[lo][j])*f)));
+  }
+  return out;
+}
 function currentPalette(){
   const key = v('palette'), P = PALETTES[key];
+  const curve = CURVES[v('rampcurve')] || CURVES.linear;
+  // when depth is doing the resampling it owns the curve, or it gets applied twice
+  const rc = Math.round(num('depth')) >= 2 ? CURVES.linear : curve;
+  let pal;
   if(P.duo){
     const a = hexes(v('c0'))[0], b = hexes(v('c1'))[0];
     const L = Math.max(2, Math.round(num('levels')));
-    if(L<=2) return [a,b];
-    const out=[]; for(let i=0;i<L;i++){ const t=i/(L-1); out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t].map(Math.round)); }
-    return out;
+    if(L<=2) pal = [a,b];
+    else {
+      pal=[]; for(let i=0;i<L;i++){ const t=rc(i/(L-1)); pal.push([0,1,2].map(j=>Math.round(a[j]+(b[j]-a[j])*t))); }
+    }
+  } else if(P.ramp){
+    const L = Math.max(2, Math.round(num('levels'))); pal=[];
+    for(let i=0;i<L;i++){ const g=Math.round(rc(i/(L-1))*255); pal.push([g,g,g]); }
+  } else if(P.extracted){
+    pal = extracted || [[0,0,0],[255,255,255]];
+  } else {
+    pal = P.c;
   }
-  if(P.ramp){
-    const L = Math.max(2, Math.round(num('levels'))), out=[];
-    for(let i=0;i<L;i++){ const g=Math.round(i*255/(L-1)); out.push([g,g,g]); }
-    return out;
-  }
-  if(P.extracted) return extracted || [[0,0,0],[255,255,255]];
-  return P.c;
+  return applyDepth(pal, curve);
 }
 function paintSwatches(pal){
   const w=$('#swatches'); w.innerHTML='';
@@ -1667,8 +1776,39 @@ function effects(d, w, h){
   }
 }
 
-/* ---------- quantize ---------- */
+/* ---------- quantize ----------
+   `distMode` is read once per render into a module-level rather than per pixel;
+   nearest() is the hottest function in the file. */
+let distMode = 'fast';
+function srgbToOklab(r,g,b){
+  const f = c => { c/=255; return c<=0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); };
+  const R=f(r), G=f(g), B=f(b);
+  const l = Math.cbrt(0.4122214708*R + 0.5363325363*G + 0.0514459929*B);
+  const m = Math.cbrt(0.2119034982*R + 0.6806995451*G + 0.1073969566*B);
+  const s = Math.cbrt(0.0883024619*R + 0.2817188376*G + 0.6299787005*B);
+  return [0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
+          1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
+          0.0259040371*l + 0.7827717662*m - 0.8086757660*s];
+}
+// palettes are small and stable within a render, so convert once and cache
+let _okPal = null, _okSrc = null;
+function palOk(pal){
+  if(_okSrc === pal) return _okPal;
+  _okSrc = pal; _okPal = pal.map(c=>srgbToOklab(c[0], c[1], c[2]));
+  return _okPal;
+}
 function nearest(pal, r,g,b){
+  if(distMode === 'perceptual'){
+    const P = palOk(pal);
+    const q = srgbToOklab(r<0?0:r>255?255:r, g<0?0:g>255?255:g, b<0?0:b>255?255:b);
+    let bi=0, bd=Infinity;
+    for(let i=0;i<P.length;i++){
+      const p=P[i], d0=q[0]-p[0], d1=q[1]-p[1], d2=q[2]-p[2];
+      const d = d0*d0 + d1*d1 + d2*d2;
+      if(d<bd){ bd=d; bi=i; }
+    }
+    return pal[bi];
+  }
   let bi=0, bd=Infinity;
   for(let i=0;i<pal.length;i++){
     const p=pal[i], dr=r-p[0], dg=g-p[1], db=b-p[2];
@@ -1726,6 +1866,28 @@ function ditherPixels(d, w, h, pal, algoKey, opts){
   for(let p=0,i=0;p<w*h;p++,i+=4){ a[i]=buf[p*3]; a[i+1]=buf[p*3+1]; a[i+2]=buf[p*3+2]; }
 }
 
+/* Dither on tone, then map the resulting level onto the palette by luminance
+   rank — colour goes *into* the dither rather than before or after it. In this
+   mode a palette's hues stop deciding which colour a pixel lands on and only
+   its ordering does, which is exactly what gives the output its retro
+   character: the tonal scale and the colour depth can be mismatched on purpose. */
+function ditherByTone(d, w, h, pal, algoKey, opts){
+  const N = pal.length;
+  const sorted = pal.slice().sort((a,b)=>palLum(a)-palLum(b));
+  const ramp = [];
+  for(let i=0;i<N;i++){ const g=Math.round(i*255/Math.max(1,N-1)); ramp.push([g,g,g]); }
+  const a = d.data;
+  for(let i=0;i<a.length;i+=4){
+    const l = 0.299*a[i] + 0.587*a[i+1] + 0.114*a[i+2];
+    a[i]=a[i+1]=a[i+2]=l;
+  }
+  ditherPixels(d, w, h, ramp, algoKey, opts);
+  for(let i=0;i<a.length;i+=4){
+    const c = sorted[Math.max(0, Math.min(N-1, Math.round(a[i]/255*(N-1))))];
+    a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
+  }
+}
+
 /* ---------- median cut extraction ---------- */
 function extractPalette(n){
   if(!img) return null;
@@ -1754,6 +1916,45 @@ function extractPalette(n){
   });
 }
 
+/* ---------- CMYK halftone ----------
+   Four screens at the classic separation angles, each halftoned to 1-bit on its
+   own channel, then multiplied back together the way overlapping inks combine
+   on paper. This is a *look*, not a colour-managed separation: the black
+   generation below is plain GCR with a slider, and no profile is involved. */
+const CMYK_ANGLES = {c:15, m:75, y:0, k:45};
+function cmykScreen(d, w, h, opts){
+  const a = d.data;
+  const gcr = num('ucr')/100;
+  const ang0 = num('htangle');
+  // one screen per channel — same shape, ruling, ink and gain, rotated apart
+  const plate = {};
+  for(const ch in CMYK_ANGLES) plate[ch] = ORD.screen.make(w, h, (ang0 + CMYK_ANGLES[ch]) % 180);
+  const sp = opts.spread;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const i=(y*w+x)*4;
+    const r=a[i]/255, g=a[i+1]/255, b=a[i+2]/255;
+    let k = 1 - Math.max(r, g, b);
+    k *= gcr;
+    const inv = 1 - k;
+    const c = inv > 0.001 ? (1-r-k)/inv : 0;
+    const m = inv > 0.001 ? (1-g-k)/inv : 0;
+    const yy= inv > 0.001 ? (1-b-k)/inv : 0;
+    const amt = {c, m, y:yy, k};
+    let orr=1, og=1, ob=1;
+    for(const ch in plate){
+      const t = plate[ch](x, y);
+      // spread widens the threshold window the same way it does for ordered dither
+      const on = Math.max(0, Math.min(1, amt[ch])) > (t-0.5)*sp + 0.5;
+      if(!on) continue;
+      if(ch==='c'){ orr*=0; og*=1; ob*=1; }
+      else if(ch==='m'){ orr*=1; og*=0; ob*=1; }
+      else if(ch==='y'){ orr*=1; og*=1; ob*=0; }
+      else { orr*=0; og*=0; ob*=0; }
+    }
+    a[i]=orr*255; a[i+1]=og*255; a[i+2]=ob*255;
+  }
+}
+
 /* ---------- render: dither ---------- */
 function renderDither(){
   const cols = Math.round(num('cols'));
@@ -1768,12 +1969,15 @@ function renderDither(){
   effects(d, cols, rows);
   const pal = currentPalette();
   paintSwatches(pal);
-  ditherPixels(d, cols, rows, pal, v('algo'), {
+  const opts = {
     strength: num('strength')/100,
     spread: num('spread'),
     bias: num('bias')*1.28,
     serp: v('serp'),
-  });
+  };
+  if(v('algo')==='ord:screen' && v('cmyk')) cmykScreen(d, cols, rows, opts);
+  else if(v('palmap')==='luma') ditherByTone(d, cols, rows, pal, v('algo'), opts);
+  else ditherPixels(d, cols, rows, pal, v('algo'), opts);
   wctx.putImageData(d,0,0);
   lastGrid = {cols, rows, cell:Math.round(num('cell')), data:new Uint8ClampedArray(d.data)};
   lastLines = null; lastColors = null;
@@ -1970,6 +2174,7 @@ function render(){
   renderAlgoCard();
   paintPalQuick();
   document.body.classList.toggle('empty', !img);
+  distMode = v('dist');
   if(!img){ setStatus('—', 0); $('#st-time').textContent='—'; return; }
   if(compareOn){ drawCompare(); return; }
   const t0 = performance.now();
@@ -1991,12 +2196,21 @@ function updateVisibility(){
   $('#wrap-cell').classList.toggle('hidden', isAscii);
   $('#textwrap').classList.toggle('on', isAscii);
   $('#wrap-atrans').classList.toggle('hidden', !isAscii);
-  const isOrd = v('algo').startsWith('ord:');
+  const algo = v('algo'), isOrd = algo.startsWith('ord:');
+  const isCurve = !isOrd && !!ED[algo.split(':')[1]].curve;
   $('#wrap-strength').classList.toggle('hidden', isOrd);
-  $('#wrap-serp').classList.toggle('hidden', isOrd);
+  $('#wrap-serp').classList.toggle('hidden', isOrd || isCurve); // no scan order to reverse
   $('#wrap-spread').classList.toggle('hidden', !isOrd);
+  $('#blk-halftone').classList.toggle('hidden', algo!=='ord:screen');
+  $('#wrap-ucr').classList.toggle('hidden', !v('cmyk'));
+  $$('#htanglequick button').forEach(b=>b.classList.toggle('on', b.dataset.a===String(Math.round(num('htangle')))));
   const P = PALETTES[v('palette')];
   $('#wrap-levels').classList.toggle('hidden', !(P.duo||P.ramp));
+  // the tone curve only has stops to move when something is generating them
+  $('#wrap-rampcurve').classList.toggle('hidden', !(P.duo||P.ramp||Math.round(num('depth'))>=2));
+  $('#wrap-palmap').classList.toggle('hidden', P.ramp);
+  paintGridQuick();
+  $$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.classList.toggle('on', b.getAttribute('aria-pressed')==='true'));
   $('#wrap-duo').classList.toggle('hidden', !P.duo);
   $('#wrap-ncol').classList.toggle('hidden', !P.extracted);
   $('#wrap-custom').classList.toggle('hidden', !CHARSETS[v('charset')].custom);
@@ -2029,15 +2243,20 @@ function setCompare(on){
 
 /* ---------- config transport (shared by presets, history, clipboard) ---------- */
 const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell','algo','strength','spread','bias','serp','palette','levels','c0','c1','ncol','acols','charset','custom','rampinv','fsize','lh','font','acolor','afg','abg','atrans','oscale','toclip',
-  'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop'];
+  'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop',
+  'depth','palmap','rampcurve','dist',
+  'htshape','htangle','htfreq','htink','htgain','cmyk','ucr'];
+// A control listed here without a matching element used to throw on boot. It is
+// the single easiest mistake to make in this file, so both directions skip
+// quietly instead — an id that has not landed yet simply does not round-trip.
 function readCfg(){
   const o={mode, colormode};
-  CFG_IDS.forEach(id=>{ const e=$('#'+id); o[id] = e.type==='checkbox'?e.checked:e.value; });
+  CFG_IDS.forEach(id=>{ const e=$('#'+id); if(!e) return; o[id] = e.type==='checkbox'?e.checked:e.value; });
   if(extracted) o.extracted = extracted;
   return o;
 }
 function applyCfg(o){
-  CFG_IDS.forEach(id=>{ if(!(id in o)) return; const e=$('#'+id); if(e.type==='checkbox') e.checked=o[id]; else e.value=o[id]; });
+  CFG_IDS.forEach(id=>{ if(!(id in o)) return; const e=$('#'+id); if(!e) return; if(e.type==='checkbox') e.checked=o[id]; else e.value=o[id]; });
   if(o.extracted) extracted=o.extracted;
   if(o.mode) mode=o.mode;
   if(o.colormode) colormode=o.colormode;
@@ -2095,17 +2314,72 @@ function redo(){
   histPos--; applyCfg(history[histPos].cfg); renderHistory(); toast('Redo');
 }
 
+/* ---------- scale ----------
+   Grid width and cell size are the two most-used controls and the useful
+   combinations of them are not obvious, so the named stops do both at once.
+   Detail comes from the grid; output resolution comes from the cell. */
+const GRID_STOPS = [
+  {n:'Micro',  cols:480, cell:1},
+  {n:'Fine',   cols:320, cell:2},
+  {n:'Normal', cols:200, cell:3},
+  {n:'Chunky', cols:128, cell:5},
+  {n:'Blocky', cols:80,  cell:8},
+  {n:'Brutal', cols:48,  cell:14},
+];
+const ASCII_STOPS = [
+  {n:'Micro',  acols:320},
+  {n:'Fine',   acols:220},
+  {n:'Normal', acols:140},
+  {n:'Chunky', acols:90},
+  {n:'Blocky', acols:60},
+  {n:'Brutal', acols:34},
+];
+function paintGridQuick(){
+  const w = $('#gridquick'); w.innerHTML='';
+  const isAscii = mode==='ascii';
+  (isAscii ? ASCII_STOPS : GRID_STOPS).forEach(S=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=S.n;
+    b.classList.toggle('on', isAscii
+      ? Math.round(num('acols'))===S.acols
+      : (Math.round(num('cols'))===S.cols && Math.round(num('cell'))===S.cell));
+    b.addEventListener('click',()=>{ setScale(S); pushHistory(true); });
+    w.appendChild(b);
+  });
+}
+function setScale(S){
+  if(S.acols !== undefined) $('#acols').value = S.acols;
+  else { $('#cols').value = S.cols; $('#cell').value = S.cell; }
+  schedule();
+}
+
 /* ---------- randomize ---------- */
+const locked = id => $('#'+id).getAttribute('aria-pressed')==='true';
+function shuffleAdjustments(){
+  $('#contrast').value = Math.round(Math.random()*80-20);
+  $('#gamma').value    = (0.6+Math.random()*1.2).toFixed(2);
+  $('#bright').value   = Math.round(Math.random()*40-20);
+  $('#sat').value      = Math.round(60+Math.random()*100);
+  $('#noise').value    = Math.round(Math.random()*25);
+  $('#bias').value     = Math.round(Math.random()*40-20);
+  compareOn = false;
+  schedule(); pushHistory(true); toast('Sliders shuffled');
+}
 function randomize(){
   const pick = a => a[(Math.random()*a.length)|0];
-  const algos = [...Object.keys(ED).map(k=>'ed:'+k), ...Object.keys(ORD).map(k=>'ord:'+k)];
-  $('#algo').value = pick(algos);
-  $('#palette').value = pick(Object.keys(PALETTES).filter(k=>!PALETTES[k].extracted));
+  if(!locked('lockalgo')){
+    const algos = [...Object.keys(ED).map(k=>'ed:'+k), ...Object.keys(ORD).map(k=>'ord:'+k)];
+    $('#algo').value = pick(algos);
+  }
+  if(!locked('lockpal')){
+    $('#palette').value = pick(Object.keys(PALETTES).filter(k=>!PALETTES[k].extracted));
+    colormode = Math.random()<0.5 ? 'mono' : 'color';
+  }
+  if(!locked('lockscale')) setScale(pick(mode==='ascii' ? ASCII_STOPS : GRID_STOPS));
   if(mode==='ascii') $('#charset').value = pick(Object.keys(CHARSETS).filter(k=>!CHARSETS[k].custom));
   $('#contrast').value = Math.round(Math.random()*80-20);
   $('#gamma').value = (0.6+Math.random()*1.2).toFixed(2);
   $('#bias').value = Math.round(Math.random()*40-20);
-  colormode = Math.random()<0.5 ? 'mono' : 'color';
   compareOn = false;
   schedule(); pushHistory(true); toast('Randomized');
 }
@@ -2545,6 +2819,15 @@ $('#dockpanel').addEventListener('click',()=>{
 $('#dockreset').addEventListener('click',()=>resetAll());
 $('#resetall').addEventListener('click',()=>resetAll());
 function resetAll(){ applyCfg(DEFAULTS); toast('Controls reset'); }
+$('#randomize').addEventListener('click',()=>randomize());
+$('#shuffleadj').addEventListener('click',()=>shuffleAdjustments());
+$$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.addEventListener('click',()=>{
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed')!=='true'));
+  updateVisibility();
+}));
+$$('#htanglequick button').forEach(b=>b.addEventListener('click',()=>{
+  $('#htangle').value = b.dataset.a; schedule(); pushHistory(true);
+}));
 $('#drawerbtn').addEventListener('click',()=>document.body.classList.toggle('drawer'));
 
 /* ---------- image loading ---------- */
