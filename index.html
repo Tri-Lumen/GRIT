@@ -315,6 +315,14 @@
   .sw.add{border:1px dashed rgba(255,255,255,.22); display:flex; align-items:center; justify-content:center; font:500 13px var(--mono); color:var(--t4)}
   #swatches{display:flex; border-radius:5px; overflow:hidden; height:22px}
   #swatches i{flex:1; display:block; min-width:1px}
+  /* extracted swatches are editable in place — click a band to recolour it */
+  #swatches.editable i{cursor:pointer}
+  #swatches.editable i:hover{box-shadow:inset 0 0 0 2px var(--text)}
+  .offscreen{position:absolute; width:1px; height:1px; opacity:0; pointer-events:none}
+
+  /* progress (clip encoding) */
+  .progtrack{height:3px; border-radius:2px; background:var(--track); overflow:hidden}
+  .progtrack i{display:block; height:100%; width:0; background:var(--accent-solid); transition:width .12s}
 
   /* ---------- stage ---------- */
   #stage{flex:1; display:flex; flex-direction:column; min-width:0; background:var(--canvas); position:relative}
@@ -532,8 +540,24 @@
                 <button class="chip" id="clear">Clear</button>
               </div>
             </div>
-            <input type="file" id="file" accept="image/*" class="hidden">
+            <input type="file" id="file" accept="image/*,video/*,application/json,.json" class="hidden">
             <div class="note" id="srcinfo">No image loaded.</div>
+          </div>
+        </div>
+
+        <div class="blk hidden" id="blk-video">
+          <button class="sec">Clip</button>
+          <div class="blkbody">
+            <div class="line">
+              <button class="chip accent" id="vplay">▶ Play</button>
+              <span class="rr" id="vtimelabel">0.00 / 0.00s</span>
+            </div>
+            <div class="sld"><span class="lab">Frame <b data-out="vtime">0</b></span>
+              <input type="range" id="vtime" data-nobind min="0" max="1000" value="0"></div>
+            <div class="sld"><span class="lab">Frame rate <b data-out="vfps">12</b> fps</span>
+              <input type="range" id="vfps" min="1" max="30" value="12"></div>
+            <label class="line"><span class="ll">Loop playback</span><input type="checkbox" class="tgl" id="vloop" checked></label>
+            <div class="note">Every frame runs the full pipeline. Export the clip as GIF, WebM or a PNG sequence from the export dialog.</div>
           </div>
         </div>
 
@@ -579,6 +603,25 @@
             <div class="sld"><span class="lab">Grain <b data-out="noise">0</b></span>
               <input type="range" id="noise" min="0" max="100" value="0"></div>
             <label class="line"><span class="ll">Invert</span><input type="checkbox" class="tgl" id="invert"></label>
+          </div>
+        </div>
+
+        <div class="blk closed" id="blk-fx">
+          <button class="sec">Effects</button>
+          <div class="blkbody">
+            <div class="sld"><span class="lab">Blur <b data-out="fxblur">0</b></span>
+              <input type="range" id="fxblur" min="0" max="4" value="0"></div>
+            <div class="sld"><span class="lab">Sharpen <b data-out="fxsharp">0</b></span>
+              <input type="range" id="fxsharp" min="0" max="100" value="0"></div>
+            <div class="sld"><span class="lab">Edge detect <b data-out="fxedge">0</b></span>
+              <input type="range" id="fxedge" min="0" max="100" value="0"></div>
+            <div class="sld"><span class="lab">Posterize <b data-out="fxpost">0</b></span>
+              <input type="range" id="fxpost" min="0" max="16" value="0"></div>
+            <div class="sld"><span class="lab">Bloom <b data-out="fxbloom">0</b></span>
+              <input type="range" id="fxbloom" min="0" max="100" value="0"></div>
+            <div class="sld"><span class="lab">Scanlines <b data-out="fxscan">0</b></span>
+              <input type="range" id="fxscan" min="0" max="100" value="0"></div>
+            <div class="note">Applied to the grid before dithering, in the order listed. 0 disables a pass.</div>
           </div>
         </div>
 
@@ -628,6 +671,7 @@
               <div class="sld" id="wrap-ncol" style="margin-top:10px"><span class="lab">Colours <b data-out="ncol">8</b></span>
                 <input type="range" id="ncol" min="2" max="32" value="8"></div>
               <div id="swatches" style="margin-top:10px"></div>
+              <input type="color" id="swedit" class="offscreen" aria-label="Edit swatch">
               <div class="note" id="palinfo" style="margin-top:8px">median cut · not sampled yet</div>
             </div>
           </div>
@@ -740,8 +784,10 @@
       </div>
       <div class="grow"></div>
       <button class="linkish" id="compare" aria-pressed="false">before ⇄ after</button>
-      <button class="linkish" id="fit" aria-pressed="true">fit</button>
+      <button class="linkish" id="zoomout" title="Zoom out">−</button>
       <button class="linkish" id="actual" aria-pressed="false">100%</button>
+      <button class="linkish" id="zoomin" title="Zoom in">+</button>
+      <button class="linkish" id="fit" aria-pressed="true">fit</button>
       <button class="linkish" id="focusbtn" aria-pressed="false">focus</button>
     </div>
 
@@ -801,8 +847,21 @@
         <div class="sec" style="margin-bottom:9px">Format</div>
         <div class="fmt" id="fmt">
           <button data-fmt="png" aria-pressed="true">PNG</button>
+          <button data-fmt="svg" aria-pressed="false">SVG</button>
           <button data-fmt="txt" aria-pressed="false">TXT</button>
+          <button data-fmt="html" aria-pressed="false">HTML</button>
         </div>
+        <div class="sec hidden" id="fmt-anim-lab" style="margin:14px 0 9px">Animation</div>
+        <div class="fmt hidden" id="fmtanim" style="grid-template-columns:1fr 1fr 1fr">
+          <button data-fmt="gif" aria-pressed="false">GIF</button>
+          <button data-fmt="webm" aria-pressed="false">WebM</button>
+          <button data-fmt="zip" aria-pressed="false">Frames</button>
+        </div>
+      </div>
+      <div class="hidden" id="wrap-progress">
+        <div class="line" style="margin-bottom:7px"><span class="ll" id="progtext">Encoding…</span>
+          <button class="chip" id="progcancel">Cancel</button></div>
+        <div class="progtrack"><i id="progbar"></i></div>
       </div>
       <div style="display:flex; flex-direction:column; gap:12px">
         <div class="line">
@@ -897,9 +956,79 @@ const ORD = {
     const v = 52.9829189 * (0.06711056*x + 0.00583715*y);
     return v - Math.floor(v);
   }},
+  blue:{n:"Blue noise 64×64"},
   white:{n:"White noise", fn:()=>Math.random()},
   none:{n:"Threshold (no dither)", fn:()=>0.5},
 };
+
+/* ---------- blue noise ----------
+   Void-and-cluster (Ulichney 1993): start from a sparse random binary pattern,
+   relax it by repeatedly moving the pixel in the tightest cluster into the
+   largest void, then rank every pixel by that same measure. The result has no
+   low-frequency energy, so it dithers without Bayer's cross-hatch and without
+   white noise's clumping. ~64² costs a few hundred ms, so it is generated on
+   first use and cached — hence the lazy getter below rather than a plain field. */
+function blueNoiseTile(N){
+  const NN=N*N, SIG=1.9, R=Math.min(6, N>>1);
+  // precomputed gaussian footprint, wrapped toroidally
+  const K=[], KS=2*R+1;
+  for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++)
+    K.push(Math.exp(-(dx*dx+dy*dy)/(2*SIG*SIG)));
+  const energy=new Float64Array(NN);
+  const bin=new Uint8Array(NN);
+  const splat=(i,sign)=>{
+    const x=i%N, y=(i/N)|0;
+    for(let dy=-R,k=0;dy<=R;dy++){
+      const yy=((y+dy)%N+N)%N;
+      for(let dx=-R;dx<=R;dx++,k++){
+        const xx=((x+dx)%N+N)%N;
+        energy[yy*N+xx]+=sign*K[k];
+      }
+    }
+  };
+  // initial pattern: ~1/10 of the pixels, placed at random
+  const M=Math.max(1, Math.round(NN/10));
+  const order=new Int32Array(NN); for(let i=0;i<NN;i++) order[i]=i;
+  for(let i=NN-1;i>0;i--){ const j=(Math.random()*(i+1))|0; const t=order[i]; order[i]=order[j]; order[j]=t; }
+  for(let i=0;i<M;i++){ bin[order[i]]=1; splat(order[i],1); }
+
+  const tightest=()=>{ let bi=-1,bv=-Infinity; for(let i=0;i<NN;i++) if(bin[i]&&energy[i]>bv){bv=energy[i];bi=i;} return bi; };
+  const largestVoid=()=>{ let bi=-1,bv=Infinity; for(let i=0;i<NN;i++) if(!bin[i]&&energy[i]<bv){bv=energy[i];bi=i;} return bi; };
+
+  // phase 0 — relax the initial pattern until moving a pixel is a no-op
+  for(let guard=0; guard<NN; guard++){
+    const c=tightest(); bin[c]=0; splat(c,-1);
+    const v=largestVoid();
+    if(v===c){ bin[c]=1; splat(c,1); break; }
+    bin[v]=1; splat(v,1);
+  }
+
+  const rank=new Int32Array(NN).fill(-1);
+  const proto=bin.slice(), pe=Float64Array.from(energy);
+
+  // phase 1 — remove the tightest cluster repeatedly, ranking downward from M-1
+  for(let r=M-1;r>=0;r--){ const c=tightest(); bin[c]=0; splat(c,-1); rank[c]=r; }
+
+  // phase 2 — from the prototype, fill the largest void repeatedly
+  bin.set(proto); energy.set(pe);
+  for(let r=M;r<NN;r++){
+    const v=largestVoid();
+    if(v<0) break;
+    bin[v]=1; splat(v,1); rank[v]=r;
+  }
+  // any pixel the scans could not reach (degenerate ties) gets the tail
+  let fill=NN-1;
+  for(let i=0;i<NN;i++) if(rank[i]<0) rank[i]=fill--;
+
+  const m=[];
+  for(let y=0;y<N;y++){ const row=[]; for(let x=0;x<N;x++) row.push(rank[y*N+x]); m.push(row); }
+  return normMat(m);
+}
+let _blueTile = null;
+Object.defineProperty(ORD.blue, 'm', {
+  configurable:true,
+  get(){ if(!_blueTile) _blueTile = blueNoiseTile(64); return _blueTile; },
+});
 
 /* ---------- algorithm copy ----------
    fs / atkinson / bayer8 are the designer's verbatim strings from the handoff.
@@ -928,7 +1057,8 @@ const ALGO_INFO = {
   'ord:diag':{b:"A 45° line screen.", p:"Engraving-like hatch that hides the pixel grid.", c:"Strong directional bias.", f:"etching, hatch looks"},
   'ord:check':{b:"Two thresholds, alternating.", p:"Pure 50% dither — the crispest texture available.", c:"Only one intermediate tone.", f:"1-bit UI, icons"},
   'ord:ign':{b:"A hash-based threshold borrowed from real-time graphics.", p:"Fine, even grain with no visible tiling.", c:"Can shimmer when the grid size changes.", f:"smooth shading"},
-  'ord:white':{b:"A fresh random threshold at every pixel.", p:"Organic grain, no repeating pattern.", c:"Softer edges; noisier than a blue-noise map.", f:"film-grain looks"},
+  'ord:blue':{b:"A void-and-cluster mask with no low-frequency energy.", p:"Organic grain, no repeating pattern, no cross-hatch.", c:"Softer edges; the 64² tile takes a moment to build the first time.", f:"film-grain looks, photographs"},
+  'ord:white':{b:"A fresh random threshold at every pixel.", p:"Cheap, and unmistakably noisy.", c:"Clumps badly — blue noise is almost always the better choice.", f:"heavy grain, glitch"},
   'ord:none':{b:"No dithering — a straight cut at the threshold.", p:"Maximum contrast; clean silhouettes.", c:"Hard banding, no tonal information.", f:"logos, stencils"},
 };
 
@@ -1049,6 +1179,9 @@ let mode = 'dither', colormode = 'mono';
 let lastText = '';
 let compareOn = false;
 let expFormat = 'png';
+// last render, kept so the vector exporters don't have to re-run the pipeline
+let lastGrid = null, lastLines = null, lastColors = null;
+let isVideo = false, vPlaying = false, vRaf = 0;
 let history = [];
 
 /* populate selects */
@@ -1108,7 +1241,23 @@ function currentPalette(){
 }
 function paintSwatches(pal){
   const w=$('#swatches'); w.innerHTML='';
-  pal.slice(0,64).forEach(c=>{ const i=document.createElement('i'); i.style.background=rgbcss(c); w.appendChild(i); });
+  // bands are editable in place only when they belong to the extracted palette
+  const live = PALETTES[v('palette')].extracted && extracted;
+  w.classList.toggle('editable', !!live);
+  pal.slice(0,64).forEach((c,idx)=>{
+    const i=document.createElement('i');
+    i.style.background=rgbcss(c);
+    if(live){
+      i.title='Click to edit this colour';
+      i.addEventListener('click',()=>{
+        editingSwatch=idx;
+        const e=$('#swedit');
+        e.value='#'+hex2(c[0])+hex2(c[1])+hex2(c[2]);
+        e.click();
+      });
+    }
+    w.appendChild(i);
+  });
 }
 // two-stop 135° split of a palette's darkest/lightest pair, per the swatch spec
 function palPairCss(key){
@@ -1159,6 +1308,76 @@ function adjust(d){
     if(grain){ const n=(Math.random()-0.5)*grain; r+=n; g+=n; b+=n; }
     if(inv){ r=255-r; g=255-g; b=255-b; }
     a[i]=r<0?0:r>255?255:r; a[i+1]=g<0?0:g>255?255:g; a[i+2]=b<0?0:b>255?255:b;
+  }
+}
+
+/* ---------- effects ----------
+   Runs on the grid buffer between adjust() and ditherPixels(), in a fixed order.
+   Working at grid resolution (not source resolution) is what keeps this cheap
+   enough to sit in the live render path. Every pass is a no-op at 0. */
+function convolve(d, w, h, k, div, bias){
+  const a=d.data, src=new Uint8ClampedArray(a), r=(k.length===9)?1:2, n=r*2+1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    let sr=0,sg=0,sb=0;
+    for(let dy=-r,i=0;dy<=r;dy++) for(let dx=-r;dx<=r;dx++,i++){
+      const yy=Math.min(h-1,Math.max(0,y+dy)), xx=Math.min(w-1,Math.max(0,x+dx));
+      const p=(yy*w+xx)*4, wt=k[i];
+      sr+=src[p]*wt; sg+=src[p+1]*wt; sb+=src[p+2]*wt;
+    }
+    const o=(y*w+x)*4;
+    a[o]=sr/div+bias; a[o+1]=sg/div+bias; a[o+2]=sb/div+bias;
+  }
+}
+function effects(d, w, h){
+  const blur=Math.round(num('fxblur')), sharp=num('fxsharp')/100, edge=num('fxedge')/100;
+  const post=Math.round(num('fxpost')), bloom=num('fxbloom')/100, scan=num('fxscan')/100;
+  const a=d.data;
+  for(let i=0;i<blur;i++) convolve(d,w,h,[1,2,1,2,4,2,1,2,1],16,0);
+  if(sharp>0){
+    const c=1+4*sharp, s=-sharp;
+    convolve(d,w,h,[0,s,0, s,c, s, 0,s,0],1,0);
+  }
+  if(edge>0){
+    const src=new Uint8ClampedArray(a);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      let gx=0, gy=0;
+      const kx=[-1,0,1,-2,0,2,-1,0,1], ky=[-1,-2,-1,0,0,0,1,2,1];
+      for(let dy=-1,i=0;dy<=1;dy++) for(let dx=-1;dx<=1;dx++,i++){
+        const yy=Math.min(h-1,Math.max(0,y+dy)), xx=Math.min(w-1,Math.max(0,x+dx));
+        const p=(yy*w+xx)*4, l=0.299*src[p]+0.587*src[p+1]+0.114*src[p+2];
+        gx+=l*kx[i]; gy+=l*ky[i];
+      }
+      const m=Math.min(255, Math.hypot(gx,gy)), o=(y*w+x)*4;
+      a[o]=src[o]*(1-edge)+m*edge; a[o+1]=src[o+1]*(1-edge)+m*edge; a[o+2]=src[o+2]*(1-edge)+m*edge;
+    }
+  }
+  if(post>=2){
+    const step=255/(post-1);
+    for(let i=0;i<a.length;i+=4){
+      a[i]=Math.round(a[i]/step)*step; a[i+1]=Math.round(a[i+1]/step)*step; a[i+2]=Math.round(a[i+2]/step)*step;
+    }
+  }
+  if(bloom>0){
+    const bright=new Uint8ClampedArray(a.length);
+    for(let i=0;i<a.length;i+=4){
+      const l=0.299*a[i]+0.587*a[i+1]+0.114*a[i+2];
+      const t=l>150 ? (l-150)/105 : 0;
+      bright[i]=a[i]*t; bright[i+1]=a[i+1]*t; bright[i+2]=a[i+2]*t; bright[i+3]=255;
+    }
+    const bd={data:bright};
+    convolve(bd,w,h,[1,2,1,2,4,2,1,2,1],16,0);
+    convolve(bd,w,h,[1,2,1,2,4,2,1,2,1],16,0);
+    for(let i=0;i<a.length;i+=4){
+      a[i]=Math.min(255,a[i]+bright[i]*bloom);
+      a[i+1]=Math.min(255,a[i+1]+bright[i+1]*bloom);
+      a[i+2]=Math.min(255,a[i+2]+bright[i+2]*bloom);
+    }
+  }
+  if(scan>0){
+    for(let y=1;y<h;y+=2) for(let x=0;x<w;x++){
+      const o=(y*w+x)*4, f=1-scan*0.8;
+      a[o]*=f; a[o+1]*=f; a[o+2]*=f;
+    }
   }
 }
 
@@ -1256,6 +1475,7 @@ function renderDither(){
   wctx.drawImage(img,0,0,cols,rows);
   const d = wctx.getImageData(0,0,cols,rows);
   adjust(d);
+  effects(d, cols, rows);
   const pal = currentPalette();
   paintSwatches(pal);
   ditherPixels(d, cols, rows, pal, v('algo'), {
@@ -1265,6 +1485,8 @@ function renderDither(){
     serp: v('serp'),
   });
   wctx.putImageData(d,0,0);
+  lastGrid = {cols, rows, cell:Math.round(num('cell')), data:new Uint8ClampedArray(d.data)};
+  lastLines = null; lastColors = null;
   let cell = Math.round(num('cell')) * Math.round(num('oscale'));
   const LIMIT = 8192;
   while(cell>1 && (cols*cell>LIMIT || rows*cell>LIMIT)) cell--;
@@ -1328,7 +1550,7 @@ function renderAscii(){
     wctx.clearRect(0,0,W,H);
     wctx.drawImage(img,0,0,W,H);
     const d=wctx.getImageData(0,0,W,H);
-    const keep=colormode; colormode='mono'; adjust(d); colormode=keep;
+    const keep=colormode; colormode='mono'; adjust(d); effects(d,W,H); colormode=keep;
     ditherPixels(d,W,H,[[0,0,0],[255,255,255]], v('algo'), opts);
     const a=d.data;
     const bits=[[0x01,0x02,0x04,0x40],[0x08,0x10,0x20,0x80]];
@@ -1353,7 +1575,7 @@ function renderAscii(){
     wctx.clearRect(0,0,cols,rows);
     wctx.drawImage(img,0,0,cols,rows);
     const d=wctx.getImageData(0,0,cols,rows);
-    const keep=colormode; colormode='mono'; adjust(d); colormode=keep;
+    const keep=colormode; colormode='mono'; adjust(d); effects(d,cols,rows); colormode=keep;
     const ramp=[]; for(let i=0;i<N;i++){ const g=Math.round(i*255/Math.max(1,N-1)); ramp.push([g,g,g]); }
     ditherPixels(d,cols,rows,ramp,v('algo'),opts);
     const a=d.data;
@@ -1399,6 +1621,7 @@ function renderAscii(){
   octx.setTransform(1,0,0,1,0,0);
 
   lastText = lines.map(r=>r.join('')).join('\n');
+  lastLines = lines; lastColors = colorData; lastGrid = null;
   $('#textout').value = lastText;
   $('#txtinfo').textContent = `· ${cols}×${rows} chars`;
   const pal = currentPalette();
@@ -1463,6 +1686,7 @@ function render(){
   try{ mode==='dither' ? renderDither() : renderAscii(); }
   catch(err){ console.error(err); toast('Render failed — see console'); }
   $('#st-time').textContent = `rendered in ${Math.round(performance.now()-t0)}ms`;
+  applyZoom();
 }
 function schedule(){
   if(queued) return; queued=true;
@@ -1492,6 +1716,7 @@ function updateVisibility(){
   $$('#ncolquick button').forEach(b=>b.classList.toggle('on', b.dataset.n===String(Math.round(num('ncol')))));
   $$('#scalequick button').forEach(b=>b.classList.toggle('on', b.dataset.s===String(Math.round(num('oscale')))));
   markFontSel();
+  $('#blk-video').classList.toggle('hidden', !isVideo);
   $('#compare').setAttribute('aria-pressed', String(compareOn));
   $('#dockcompare').setAttribute('aria-pressed', String(compareOn));
 }
@@ -1513,7 +1738,8 @@ function setCompare(on){
 }
 
 /* ---------- config transport (shared by presets, history, clipboard) ---------- */
-const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell','algo','strength','spread','bias','serp','palette','levels','c0','c1','ncol','acols','charset','custom','rampinv','fsize','lh','font','acolor','afg','abg','atrans','oscale','toclip'];
+const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell','algo','strength','spread','bias','serp','palette','levels','c0','c1','ncol','acols','charset','custom','rampinv','fsize','lh','font','acolor','afg','abg','atrans','oscale','toclip',
+  'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop'];
 function readCfg(){
   const o={mode, colormode};
   CFG_IDS.forEach(id=>{ const e=$('#'+id); o[id] = e.type==='checkbox'?e.checked:e.value; });
@@ -1533,17 +1759,23 @@ const DEFAULTS = readCfg();
 
 /* ---------- history ---------- */
 let histTimer=null;
-function pushHistory(){
+// Slider drags are debounced into one snapshot. Discrete actions (loading a
+// source, applying a preset, picking an algorithm) commit immediately —
+// otherwise the next debounced edit clears the pending timer and that state is
+// lost, which leaves a hole undo can never step back into.
+function pushHistory(immediate){
   clearTimeout(histTimer);
-  histTimer = setTimeout(()=>{
+  const commit = ()=>{
     const cfg = readCfg();
     const label = `${cfg.mode} · ${algoName(cfg.algo)}`;
     const prev = history[0];
     if(prev && JSON.stringify(prev.cfg)===JSON.stringify(cfg)) return;
     history.unshift({cfg, label, t:new Date()});
     if(history.length>40) history.length=40;
+    histPos = 0;
     renderHistory();
-  }, 800);
+  };
+  if(immediate) commit(); else histTimer = setTimeout(commit, 800);
 }
 function renderHistory(){
   const w=$('#historylist'); w.innerHTML='';
@@ -1560,6 +1792,44 @@ function renderHistory(){
   });
 }
 
+/* ---------- undo / redo ----------
+   Rides on the same snapshot stack the History tab shows: index 0 is newest,
+   so undo walks toward older entries and redo walks back. */
+let histPos = 0;
+function undo(){
+  if(histPos >= history.length-1) return toast('Nothing to undo');
+  histPos++; applyCfg(history[histPos].cfg); renderHistory(); toast('Undo');
+}
+function redo(){
+  if(histPos <= 0) return toast('Nothing to redo');
+  histPos--; applyCfg(history[histPos].cfg); renderHistory(); toast('Redo');
+}
+
+/* ---------- randomize ---------- */
+function randomize(){
+  const pick = a => a[(Math.random()*a.length)|0];
+  const algos = [...Object.keys(ED).map(k=>'ed:'+k), ...Object.keys(ORD).map(k=>'ord:'+k)];
+  $('#algo').value = pick(algos);
+  $('#palette').value = pick(Object.keys(PALETTES).filter(k=>!PALETTES[k].extracted));
+  if(mode==='ascii') $('#charset').value = pick(Object.keys(CHARSETS).filter(k=>!CHARSETS[k].custom));
+  $('#contrast').value = Math.round(Math.random()*80-20);
+  $('#gamma').value = (0.6+Math.random()*1.2).toFixed(2);
+  $('#bias').value = Math.round(Math.random()*40-20);
+  colormode = Math.random()<0.5 ? 'mono' : 'color';
+  compareOn = false;
+  schedule(); pushHistory(true); toast('Randomized');
+}
+
+/* ---------- palette editor ---------- */
+let editingSwatch = -1;
+$('#swedit').addEventListener('input',()=>{
+  if(editingSwatch<0 || !extracted) return;
+  extracted[editingSwatch] = hexes(v('swedit'))[0];
+  $('#palinfo').textContent = `median cut · sampled ${extracted.length} · edited`;
+  schedule();
+});
+$('#swedit').addEventListener('change',()=>pushHistory());
+
 /* ---------- presets ---------- */
 (function(){
   const w=$('#presetlist');
@@ -1575,11 +1845,215 @@ function renderHistory(){
       if(L.cm) colormode=L.cm;
       if(L.mode) mode=L.mode;
       compareOn=false;
-      schedule(); pushHistory(); toast(`${L.n} applied`);
+      schedule(); pushHistory(true); toast(`${L.n} applied`);
     });
     w.appendChild(b);
   }
 })();
+
+/* ---------- vector + markup export ---------- */
+const hex2 = n => n.toString(16).padStart(2,'0');
+const xmlesc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Horizontal run-length merging is what makes this usable: one <path> per colour,
+// with a subpath per run. Per-cell <rect>s produce files tens of MB wide.
+function svgDither(){
+  if(!lastGrid) return null;
+  const {cols,rows,data,cell} = lastGrid;
+  const groups = new Map();
+  for(let y=0;y<rows;y++){
+    let x=0;
+    while(x<cols){
+      const i=(y*cols+x)*4;
+      const key=(data[i]<<16)|(data[i+1]<<8)|data[i+2];
+      let run=1;
+      while(x+run<cols){
+        const j=(y*cols+x+run)*4;
+        if((((data[j]<<16)|(data[j+1]<<8)|data[j+2]))!==key) break;
+        run++;
+      }
+      if(!groups.has(key)) groups.set(key,[]);
+      groups.get(key).push(`M${x*cell} ${y*cell}h${run*cell}v${cell}h-${run*cell}z`);
+      x+=run;
+    }
+  }
+  const w=cols*cell, h=rows*cell, out=[];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges">`);
+  for(const [key,paths] of groups){
+    const c=`#${hex2((key>>16)&255)}${hex2((key>>8)&255)}${hex2(key&255)}`;
+    out.push(`<path fill="${c}" d="${paths.join('')}"/>`);
+  }
+  out.push('</svg>');
+  return out.join('\n');
+}
+function svgAscii(){
+  if(!lastLines) return null;
+  const fsize=num('fsize'), lh=Math.max(1,fsize*num('lh'));
+  octx.font=`${fsize}px ${v('font')}`;
+  const cw=Math.max(1,octx.measureText('M').width), pad=Math.round(fsize*0.5);
+  const cols=lastLines[0]?lastLines[0].length:0, rows=lastLines.length;
+  const w=Math.ceil(cols*cw)+pad*2, h=Math.ceil(rows*lh)+pad*2;
+  const out=[`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`];
+  if(!v('atrans')) out.push(`<rect width="${w}" height="${h}" fill="${v('abg')}"/>`);
+  out.push(`<g font-family="${xmlesc(v('font'))}" font-size="${fsize}" xml:space="preserve" dominant-baseline="text-before-edge">`);
+  for(let r=0;r<rows;r++){
+    const y=pad+r*lh;
+    if(lastColors){
+      // merge neighbouring glyphs that share a colour into one <text>
+      const a=lastColors.data;
+      let c=0;
+      while(c<cols){
+        const i=(r*cols+c)*4, col=`rgb(${a[i]},${a[i+1]},${a[i+2]})`;
+        let run=1;
+        while(c+run<cols){
+          const j=(r*cols+c+run)*4;
+          if(`rgb(${a[j]},${a[j+1]},${a[j+2]})`!==col) break;
+          run++;
+        }
+        out.push(`<text x="${(pad+c*cw).toFixed(2)}" y="${y.toFixed(2)}" fill="${col}">${xmlesc(lastLines[r].slice(c,c+run).join(''))}</text>`);
+        c+=run;
+      }
+    } else {
+      out.push(`<text x="${pad}" y="${y.toFixed(2)}" fill="${v('afg')}">${xmlesc(lastLines[r].join(''))}</text>`);
+    }
+  }
+  out.push('</g></svg>');
+  return out.join('\n');
+}
+function buildSvg(){ return mode==='ascii' ? svgAscii() : svgDither(); }
+
+function buildHtml(){
+  const title=xmlesc(imgName);
+  if(mode==='ascii'){
+    if(!lastLines) return null;
+    const bg=v('atrans')?'transparent':v('abg');
+    let body='';
+    const cols=lastLines[0]?lastLines[0].length:0;
+    for(let r=0;r<lastLines.length;r++){
+      if(lastColors){
+        const a=lastColors.data;
+        let c=0;
+        while(c<cols){
+          const i=(r*cols+c)*4, col=`rgb(${a[i]},${a[i+1]},${a[i+2]})`;
+          let run=1;
+          while(c+run<cols){
+            const j=(r*cols+c+run)*4;
+            if(`rgb(${a[j]},${a[j+1]},${a[j+2]})`!==col) break;
+            run++;
+          }
+          body+=`<span style="color:${col}">${xmlesc(lastLines[r].slice(c,c+run).join(''))}</span>`;
+          c+=run;
+        }
+      } else body+=xmlesc(lastLines[r].join(''));
+      body+='\n';
+    }
+    return `<!DOCTYPE html>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>body{margin:0;background:${bg}}
+pre{margin:0;padding:${Math.round(num('fsize')*0.5)}px;font:${num('fsize')}px/${num('lh')} ${v('font')};color:${v('afg')};white-space:pre}</style>
+<pre>${body}</pre>`;
+  }
+  const svg=svgDither();
+  if(!svg) return null;
+  return `<!DOCTYPE html>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>body{margin:0;background:#111;display:flex;min-height:100vh;align-items:center;justify-content:center}
+svg{max-width:100%;height:auto;image-rendering:pixelated}</style>
+${svg}`;
+}
+
+/* ---------- animated GIF ----------
+   Written out by hand because the no-dependency rule stands. Dithered output is
+   already quantized to a small palette, which is exactly what GIF's indexed
+   colour model wants, so this is a natural fit rather than a compromise. */
+function lzwEncode(minCodeSize, indices){
+  const clear=1<<minCodeSize, eoi=clear+1;
+  let codeSize=minCodeSize+1, next=eoi+1;
+  let dict=new Map();
+  const bytes=[]; let buf=0, bits=0;
+  const put=c=>{ buf|=c<<bits; bits+=codeSize; while(bits>=8){ bytes.push(buf&255); buf>>=8; bits-=8; } };
+  put(clear);
+  let cur=indices[0];
+  for(let i=1;i<indices.length;i++){
+    const k=indices[i], key=(cur<<8)|k;
+    const got=dict.get(key);
+    if(got!==undefined){ cur=got; continue; }
+    put(cur);
+    if(next<4096){
+      dict.set(key,next);
+      if(next===(1<<codeSize) && codeSize<12) codeSize++;
+      next++;
+    } else {
+      put(clear); dict=new Map(); next=eoi+1; codeSize=minCodeSize+1;
+    }
+    cur=k;
+  }
+  put(cur); put(eoi);
+  if(bits>0) bytes.push(buf&255);
+  return bytes;
+}
+function gifEncoder(width, height, palette, delayCs){
+  const out=[];
+  const push=(...b)=>out.push(...b);
+  const str=s=>{ for(let i=0;i<s.length;i++) out.push(s.charCodeAt(i)); };
+  // colour table size must be a power of two, 2..256
+  let bits=1; while((1<<bits)<palette.length) bits++;
+  if(bits>8) bits=8;
+  const tableLen=1<<bits;
+  str('GIF89a');
+  push(width&255,(width>>8)&255, height&255,(height>>8)&255);
+  push(0xF0|(bits-1), 0, 0);                       // global table, sorted flag off
+  for(let i=0;i<tableLen;i++){
+    const c=palette[i]||[0,0,0];
+    push(c[0]&255,c[1]&255,c[2]&255);
+  }
+  str('!');push(0xFF,11);str('NETSCAPE2.0');push(3,1,0,0,0);   // loop forever
+  return {
+    frame(indices){
+      push(0x21,0xF9,4, 0x04, delayCs&255,(delayCs>>8)&255, 0, 0); // disposal: restore bg
+      push(0x2C, 0,0, 0,0, width&255,(width>>8)&255, height&255,(height>>8)&255, 0);
+      const min=Math.max(2,bits);
+      push(min);
+      const data=lzwEncode(min, indices);
+      for(let i=0;i<data.length;i+=255){
+        const chunk=data.slice(i,i+255);
+        push(chunk.length,...chunk);
+      }
+      push(0);
+    },
+    finish(){ push(0x3B); return new Blob([new Uint8Array(out)],{type:'image/gif'}); },
+  };
+}
+
+/* ---------- ZIP (stored, no compression) ----------
+   PNG frames are already deflated; storing them keeps this to a few dozen lines
+   and avoids shipping an inflate/deflate implementation. */
+const CRC_TABLE=(()=>{ const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; }
+  return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_TABLE[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(files){   // files: [{name, data:Uint8Array}]
+  const parts=[], central=[]; let offset=0;
+  const enc=new TextEncoder();
+  const u32=n=>[n&255,(n>>8)&255,(n>>16)&255,(n>>>24)&255];
+  const u16=n=>[n&255,(n>>8)&255];
+  for(const f of files){
+    const name=enc.encode(f.name), crc=crc32(f.data), sz=f.data.length;
+    const local=[...u32(0x04034b50),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),
+                 ...u32(crc),...u32(sz),...u32(sz),...u16(name.length),...u16(0)];
+    parts.push(new Uint8Array(local), name, f.data);
+    central.push([...u32(0x02014b50),...u16(20),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),
+                  ...u32(crc),...u32(sz),...u32(sz),...u16(name.length),...u16(0),...u16(0),
+                  ...u16(0),...u16(0),...u32(0),...u32(offset), ...name]);
+    offset += local.length + name.length + sz;
+  }
+  const cd=[]; central.forEach(c=>cd.push(...c));
+  const eocd=[...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),
+              ...u32(cd.length),...u32(offset),...u16(0)];
+  return new Blob([...parts, new Uint8Array(cd), new Uint8Array(eocd)],{type:'application/zip'});
+}
 
 /* ---------- font picker ----------
    Two facts get measured per family rather than hardcoded, because both depend on
@@ -1700,10 +2174,10 @@ function showTab(name){
   $$('.tabs button').forEach(x=>x.setAttribute('aria-selected', String(x.dataset.tab===name)));
   $$('.pane').forEach(p=>p.classList.toggle('hidden', p.dataset.pane!==name));
 }
-$$('#mode button, #dockmode button').forEach(b=>b.addEventListener('click',()=>{ mode=b.dataset.mode; compareOn=false; schedule(); pushHistory(); }));
+$$('#mode button, #dockmode button').forEach(b=>b.addEventListener('click',()=>{ mode=b.dataset.mode; compareOn=false; schedule(); pushHistory(true); }));
 $$('#colormode button').forEach(b=>b.addEventListener('click',()=>{ colormode=b.dataset.cm; schedule(); pushHistory(); }));
 $$('#algogrid .cell').forEach(b=>{
-  b.addEventListener('click',()=>{ $('#algo').value=b.dataset.algo; algoHover=null; schedule(); pushHistory(); });
+  b.addEventListener('click',()=>{ $('#algo').value=b.dataset.algo; algoHover=null; schedule(); pushHistory(true); });
   b.addEventListener('mouseenter',()=>{ algoHover=b.dataset.algo; renderAlgoCard(); });
 });
 $('#algogrid').addEventListener('mouseleave',()=>{ algoHover=null; renderAlgoCard(); });
@@ -1711,7 +2185,7 @@ $('#algonote').addEventListener('click',()=>{
   const body=$('#algobody'), open=body.classList.toggle('hidden');
   $('#algonote .caret').textContent = open ? '▸' : '▾';
 });
-$$('#rampquick .row').forEach(b=>b.addEventListener('click',()=>{ $('#charset').value=b.dataset.cs; schedule(); pushHistory(); }));
+$$('#rampquick .row').forEach(b=>b.addEventListener('click',()=>{ $('#charset').value=b.dataset.cs; schedule(); pushHistory(true); }));
 $$('#ncolquick button').forEach(b=>b.addEventListener('click',()=>{ $('#ncol').value=b.dataset.n; schedule(); }));
 $$('#scalequick button').forEach(b=>b.addEventListener('click',()=>{ $('#oscale').value=b.dataset.s; schedule(); }));
 $('#extract').addEventListener('click',()=>{
@@ -1719,12 +2193,29 @@ $('#extract').addEventListener('click',()=>{
   extracted = extractPalette(Math.round(num('ncol')));
   $('#palette').value='custom'; colormode='color';
   $('#palinfo').textContent = `median cut · sampled ${extracted.length}`;
-  schedule(); pushHistory(); toast(`${extracted.length} colours extracted`);
+  schedule(); pushHistory(true); toast(`${extracted.length} colours extracted`);
 });
 
 /* view controls */
-$('#fit').addEventListener('click',()=>{ out.classList.remove('actual'); $('#fit').setAttribute('aria-pressed','true'); $('#actual').setAttribute('aria-pressed','false'); });
-$('#actual').addEventListener('click',()=>{ out.classList.add('actual'); $('#fit').setAttribute('aria-pressed','false'); $('#actual').setAttribute('aria-pressed','true'); });
+let zoom = 1, fitMode = true;
+const ZOOMS = [0.25,0.33,0.5,0.67,1,1.5,2,3,4,6,8];
+function applyZoom(){
+  out.classList.toggle('actual', !fitMode);
+  out.style.width = fitMode ? '' : (out.width*zoom)+'px';
+  out.style.height = fitMode ? '' : 'auto';
+  $('#actual').textContent = fitMode ? '100%' : Math.round(zoom*100)+'%';
+  $('#fit').setAttribute('aria-pressed', String(fitMode));
+  $('#actual').setAttribute('aria-pressed', String(!fitMode));
+}
+function setZoom(z){ zoom=Math.min(8,Math.max(0.25,z)); fitMode=false; applyZoom(); }
+function stepZoom(dir){
+  const i=ZOOMS.findIndex(z=>z>=zoom-1e-6);
+  setZoom(ZOOMS[Math.min(ZOOMS.length-1, Math.max(0, (i<0?4:i)+dir))]);
+}
+$('#fit').addEventListener('click',()=>{ fitMode=true; applyZoom(); });
+$('#actual').addEventListener('click',()=>{ setZoom(1); });
+$('#zoomin').addEventListener('click',()=>stepZoom(1));
+$('#zoomout').addEventListener('click',()=>stepZoom(-1));
 $('#compare').addEventListener('click',()=>setCompare(!compareOn));
 $('#dockcompare').addEventListener('click',()=>setCompare(!compareOn));
 $('#focusbtn').addEventListener('click',()=>setFocus(!document.body.classList.contains('focus')));
@@ -1754,17 +2245,44 @@ $('#drawerbtn').addEventListener('click',()=>document.body.classList.toggle('dra
 /* ---------- image loading ---------- */
 function setImage(source, name){
   img = source; imgName = (name||'grit').replace(/\.[^.]+$/,'');
-  $('#srcinfo').textContent = `${name||'image'} · ${img.width}×${img.height}`;
+  $('#srcinfo').textContent = isVideo
+    ? `${name||'clip'} · ${img.width}×${img.height} · ${(img.duration||0).toFixed(2)}s`
+    : `${name||'image'} · ${img.width}×${img.height}`;
   $('#doctitle').textContent = `GRIT — ${name||'image'}`;
   document.body.classList.remove('empty');
   compareOn=false;
-  schedule(); pushHistory();
+  schedule(); pushHistory(true);
 }
 function loadFile(f){
-  if(!f || !f.type.startsWith('image/')) return;
+  if(!f) return;
+  // a dropped settings file is applied rather than loaded as a source
+  if(f.type==='application/json' || /\.json$/i.test(f.name)){
+    f.text().then(t=>{
+      try{ applyCfg(JSON.parse(t)); pushHistory(); toast('Settings applied'); }
+      catch(e){ toast('That was not valid settings JSON'); }
+    });
+    return;
+  }
+  if(f.type.startsWith('video/')){
+    vStop();
+    const url = URL.createObjectURL(f);
+    const vid = document.createElement('video');
+    vid.muted = true; vid.playsInline = true; vid.preload = 'auto'; vid.loop = v('vloop');
+    vid.onloadeddata = ()=>{
+      vid.width = vid.videoWidth; vid.height = vid.videoHeight;
+      isVideo = true;
+      setImage(vid, f.name);
+      syncClipReadout();
+    };
+    vid.onerror = ()=>{ toast('Could not read that clip'); URL.revokeObjectURL(url); };
+    vid.src = url;
+    return;
+  }
+  if(!f.type.startsWith('image/')) return toast('Unsupported file type');
+  vStop();
   const url = URL.createObjectURL(f);
   const im = new Image();
-  im.onload = ()=>{ setImage(im, f.name); URL.revokeObjectURL(url); };
+  im.onload = ()=>{ isVideo=false; setImage(im, f.name); URL.revokeObjectURL(url); };
   im.onerror = ()=>{ toast('Could not read that file'); URL.revokeObjectURL(url); };
   im.src = url;
 }
@@ -1791,6 +2309,7 @@ document.addEventListener('paste',e=>{
   for(const it of items){ if(it.type.startsWith('image/')){ loadFile(it.getAsFile()); break; } }
 });
 $('#clear').addEventListener('click',()=>{
+  vStop(); isVideo=false;
   img=null; $('#srcinfo').textContent='No image loaded.';
   $('#doctitle').textContent='GRIT — no image';
   octx.setTransform(1,0,0,1,0,0); out.width=600; out.height=400;
@@ -1820,12 +2339,155 @@ function testCard(){
   return c;
 }
 function loadTestCard(){
+  vStop(); isVideo=false;
   const im=new Image();
   im.onload=()=>setImage(im,'test-card');
   im.src=testCard().toDataURL();
 }
 $('#sample').addEventListener('click', loadTestCard);
 $('#emptysample').addEventListener('click', loadTestCard);
+
+/* ---------- clip transport ----------
+   A <video> is a valid drawImage source, so the whole pipeline works per frame
+   with no changes to it. `img` simply holds the video element instead of an Image. */
+function seekTo(t){
+  return new Promise(res=>{
+    if(!isVideo || !img) return res();
+    const done=()=>{ img.removeEventListener('seeked',done); res(); };
+    img.addEventListener('seeked',done);
+    img.currentTime = Math.max(0, Math.min(img.duration||0, t));
+  });
+}
+function vStop(){
+  vPlaying=false; cancelAnimationFrame(vRaf);
+  if(isVideo && img) img.pause();
+  $('#vplay').textContent='▶ Play';
+}
+function vToggle(){
+  if(!isVideo || !img) return;
+  if(vPlaying) return vStop();
+  vPlaying=true; $('#vplay').textContent='❚❚ Pause';
+  img.loop = v('vloop');
+  img.play().catch(()=>{});
+  const tick=()=>{
+    if(!vPlaying) return;
+    if(img.ended && !v('vloop')) return vStop();
+    syncClipReadout();
+    render();
+    vRaf=requestAnimationFrame(tick);
+  };
+  vRaf=requestAnimationFrame(tick);
+}
+function syncClipReadout(){
+  if(!isVideo || !img || !img.duration) return;
+  const t=img.currentTime, d=img.duration;
+  $('#vtimelabel').textContent = `${t.toFixed(2)} / ${d.toFixed(2)}s`;
+  const s=$('#vtime');
+  if(document.activeElement!==s) s.value = Math.round(t/d*1000);
+}
+$('#vplay').addEventListener('click', vToggle);
+$('#vtime').addEventListener('input', async ()=>{
+  if(!isVideo || !img || !img.duration) return;
+  vStop();
+  await seekTo(num('vtime')/1000*img.duration);
+  syncClipReadout(); render();
+});
+
+/* ---------- clip export ---------- */
+let encodeCancelled=false;
+function showProgress(on, text){
+  $('#wrap-progress').classList.toggle('hidden', !on);
+  if(text) $('#progtext').textContent=text;
+  if(!on) $('#progbar').style.width='0%';
+}
+function setProgress(f, text){
+  $('#progbar').style.width = Math.round(f*100)+'%';
+  if(text) $('#progtext').textContent=text;
+}
+$('#progcancel').addEventListener('click',()=>{ encodeCancelled=true; });
+
+// walk the clip frame by frame, running the full pipeline on each
+async function eachFrame(fn){
+  const fps=Math.round(num('vfps')), dur=img.duration||0;
+  const total=Math.max(1, Math.floor(dur*fps));
+  encodeCancelled=false;
+  vStop();
+  for(let i=0;i<total;i++){
+    if(encodeCancelled) return {cancelled:true, total};
+    await seekTo(i/fps);
+    render();
+    await fn(i, total);
+    setProgress((i+1)/total, `Frame ${i+1} of ${total}`);
+    await new Promise(r=>setTimeout(r,0));   // let the progress bar paint
+  }
+  return {cancelled:false, total};
+}
+async function exportGif(){
+  const fps=Math.round(num('vfps'));
+  showProgress(true,'Preparing…');
+  // one shared colour table for the whole clip, taken from the active palette
+  const pal=currentPalette().slice(0,256);
+  let enc=null;
+  const r = await eachFrame(async ()=>{
+    const w=out.width, h=out.height;
+    if(!enc) enc=gifEncoder(w,h,pal,Math.max(2,Math.round(100/fps)));
+    const d=octx.getImageData(0,0,w,h).data;
+    const idx=new Uint8Array(w*h);
+    for(let p=0,i=0;p<w*h;p++,i+=4){
+      let bi=0,bd=Infinity;
+      for(let c=0;c<pal.length;c++){
+        const q=pal[c], dr=d[i]-q[0], dg=d[i+1]-q[1], db=d[i+2]-q[2];
+        const dist=dr*dr+dg*dg+db*db;
+        if(dist<bd){bd=dist;bi=c;}
+      }
+      idx[p]=bi;
+    }
+    enc.frame(idx);
+  });
+  showProgress(false);
+  if(r.cancelled || !enc) return toast('Export cancelled');
+  download(enc.finish(), `${imgName}.gif`);
+  toast(`GIF saved — ${r.total} frames`);
+}
+async function exportWebm(){
+  if(typeof MediaRecorder==='undefined' || !out.captureStream)
+    return toast('WebM recording is not supported in this browser');
+  const types=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  const mime=types.find(t=>MediaRecorder.isTypeSupported(t));
+  if(!mime) return toast('WebM recording is not supported in this browser');
+  showProgress(true,'Recording…');
+  const stream=out.captureStream(0);
+  const track=stream.getVideoTracks()[0];
+  const rec=new MediaRecorder(stream,{mimeType:mime});
+  const chunks=[];
+  rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  const stopped=new Promise(res=>{ rec.onstop=res; });
+  rec.start();
+  const fps=Math.round(num('vfps'));
+  const r = await eachFrame(async ()=>{
+    if(track.requestFrame) track.requestFrame();
+    await new Promise(res=>setTimeout(res, Math.round(1000/fps)));
+  });
+  rec.stop(); await stopped;
+  stream.getTracks().forEach(t=>t.stop());
+  showProgress(false);
+  if(r.cancelled) return toast('Export cancelled');
+  download(new Blob(chunks,{type:mime}), `${imgName}.webm`);
+  toast(`WebM saved — ${r.total} frames`);
+}
+async function exportFrames(){
+  showProgress(true,'Rendering frames…');
+  const files=[];
+  const r = await eachFrame(async (i)=>{
+    const blob=await new Promise(res=>out.toBlob(res));
+    files.push({name:`${imgName}_${String(i).padStart(4,'0')}.png`, data:new Uint8Array(await blob.arrayBuffer())});
+  });
+  showProgress(false);
+  if(r.cancelled || !files.length) return toast('Export cancelled');
+  setProgress(1,'Zipping…');
+  download(zipStore(files), `${imgName}-frames.zip`);
+  toast(`${files.length} frames saved`);
+}
 
 /* ---------- exports ---------- */
 function download(blob, name){
@@ -1858,43 +2520,81 @@ function saveTxt(){
 $('#copytxtbtn').addEventListener('click', copyTxt);
 
 /* export dialog */
+const ANIM_FMTS = ['gif','webm','zip'];
+function saveText(text, ext, mime){
+  if(!text) return toast('Nothing to export yet');
+  download(new Blob([text],{type:mime}), `${imgName}.${ext}`);
+  toast(`${ext.toUpperCase()} saved`);
+}
+async function copyText(text, label){
+  if(!text) return toast('Nothing to export yet');
+  try{ await navigator.clipboard.writeText(text); toast(`${label} copied`); }
+  catch(e){ prompt(`Copy your ${label}:`, text); }
+}
 function openExport(){
   if(!img) return toast('Load an image first');
-  expFormat = mode==='ascii' ? expFormat : 'png';
-  $$('#fmt button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
+  if(mode!=='ascii' && expFormat==='txt') expFormat='png';
+  if(!isVideo && ANIM_FMTS.includes(expFormat)) expFormat='png';
+  $('#fmtanim').classList.toggle('hidden', !isVideo);
+  $('#fmt-anim-lab').classList.toggle('hidden', !isVideo);
+  markFormat();
   updateExportSummary();
+  showProgress(false);
   $('#expscrim').classList.add('on');
   $('#expgo').focus();
 }
-function closeExport(){ $('#expscrim').classList.remove('on'); }
+function closeExport(){ encodeCancelled=true; showProgress(false); $('#expscrim').classList.remove('on'); }
+function markFormat(){
+  $$('#fmt button, #fmtanim button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
+  const anim = ANIM_FMTS.includes(expFormat);
+  // scale, transparency and clipboard don't apply to a clip encode
+  $('#scalequick').closest('.line').classList.toggle('hidden', anim);
+  $('#oscale').closest('.sld').classList.toggle('hidden', anim);
+  $('#toclip').closest('.line').classList.toggle('hidden', anim || expFormat==='zip');
+  $('#expgo').textContent = anim ? 'Encode' : 'Save it';
+}
+function fmtBytes(kb){ return kb>1024 ? (kb/1024).toFixed(1)+' MB' : Math.max(1,Math.round(kb))+' KB'; }
 function updateExportSummary(){
   const s = Math.round(num('oscale'));
   const suffix = s>1 ? `@${s}x` : '';
+  const name = $('#expname'), dims = $('#expdims');
   if(expFormat==='txt'){
-    const bytes = lastText.length;
-    $('#expname').textContent = `${imgName}.txt`;
-    $('#expdims').textContent = lastText
-      ? `${lastText.split('\n')[0].length} × ${lastText.split('\n').length} chars · ~${(bytes/1024).toFixed(1)} KB`
+    name.textContent = `${imgName}.txt`;
+    dims.textContent = lastText
+      ? `${lastText.split('\n')[0].length} × ${lastText.split('\n').length} chars · ~${fmtBytes(lastText.length/1024)}`
       : 'ASCII mode only';
+  } else if(expFormat==='svg' || expFormat==='html'){
+    const src = expFormat==='svg' ? buildSvg() : buildHtml();
+    name.textContent = `${imgName}.${expFormat}`;
+    dims.textContent = src ? `vector · ~${fmtBytes(src.length/1024)}` : 'nothing rendered yet';
+  } else if(ANIM_FMTS.includes(expFormat)){
+    const fps=Math.round(num('vfps')), frames=Math.max(1,Math.floor((img&&img.duration||0)*fps));
+    name.textContent = `${imgName}.${expFormat==='zip'?'zip':expFormat}`;
+    dims.textContent = `${frames} frames @ ${fps}fps · ${out.width} × ${out.height}`;
   } else {
-    $('#expname').textContent = `${imgName}-${mode}${suffix}.png`;
+    name.textContent = `${imgName}-${mode}${suffix}.png`;
     // PNG of flat dithered colour compresses hard; ~0.35 bytes/px is a fair guess
-    const est = out.width*out.height*0.35/1024;
-    $('#expdims').textContent = `${out.width} × ${out.height} · ~${est>1024?(est/1024).toFixed(1)+' MB':Math.max(1,Math.round(est))+' KB'}`;
+    dims.textContent = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
   }
 }
-$$('#fmt button').forEach(b=>b.addEventListener('click',()=>{
-  expFormat=b.dataset.fmt;
-  $$('#fmt button').forEach(x=>x.setAttribute('aria-pressed', String(x===b)));
-  updateExportSummary();
+$$('#fmt button, #fmtanim button').forEach(b=>b.addEventListener('click',()=>{
+  expFormat=b.dataset.fmt; markFormat(); updateExportSummary();
 }));
 $('#openexport').addEventListener('click', openExport);
 $('#expcancel').addEventListener('click', closeExport);
 $('#expscrim').addEventListener('mousedown', e=>{ if(e.target===$('#expscrim')) closeExport(); });
-$('#expgo').addEventListener('click',()=>{
+$('#expgo').addEventListener('click', async ()=>{
   const clip = v('toclip');
-  if(expFormat==='txt'){ clip ? copyTxt() : saveTxt(); }
-  else { clip ? copyImg() : savePng(); }
+  switch(expFormat){
+    case 'txt':  clip ? copyTxt() : saveTxt(); break;
+    case 'svg':  { const s=buildSvg();  clip ? copyText(s,'SVG')  : saveText(s,'svg','image/svg+xml'); break; }
+    case 'html': { const s=buildHtml(); clip ? copyText(s,'HTML') : saveText(s,'html','text/html'); break; }
+    // clip encodes keep the dialog up so the progress bar is visible, then close
+    case 'gif':  await exportGif();    closeExport(); return;
+    case 'webm': await exportWebm();   closeExport(); return;
+    case 'zip':  await exportFrames(); closeExport(); return;
+    default:     clip ? copyImg() : savePng();
+  }
   closeExport();
 });
 
@@ -1929,9 +2629,23 @@ function buildCommands(){
   c.push({k:'view', n:'Toggle focus mode', h:'F', run:()=>setFocus(!document.body.classList.contains('focus'))});
   c.push({k:'export', n:'Export…', h:'E', run:openExport});
   c.push({k:'export', n:'Save PNG', h:'S', run:savePng});
+  c.push({k:'export', n:'Save SVG (vector)', run:()=>saveText(buildSvg(),'svg','image/svg+xml')});
+  c.push({k:'export', n:'Save HTML', run:()=>saveText(buildHtml(),'html','text/html')});
+  c.push({k:'export', n:'Copy SVG', run:()=>copyText(buildSvg(),'SVG')});
   c.push({k:'export', n:'Copy image', run:copyImg});
   c.push({k:'export', n:'Copy text', run:copyTxt});
   c.push({k:'export', n:'Save .txt', run:saveTxt});
+  if(isVideo){
+    c.push({k:'clip', n:'Play / pause clip', h:'Space', run:vToggle});
+    c.push({k:'clip', n:'Export animated GIF', run:()=>{ openExport(); expFormat='gif'; markFormat(); updateExportSummary(); }});
+    c.push({k:'clip', n:'Export WebM', run:()=>{ openExport(); expFormat='webm'; markFormat(); updateExportSummary(); }});
+    c.push({k:'clip', n:'Export PNG frame sequence', run:()=>{ openExport(); expFormat='zip'; markFormat(); updateExportSummary(); }});
+  }
+  c.push({k:'edit', n:'Undo', h:'⌘Z', run:undo});
+  c.push({k:'edit', n:'Redo', h:'⇧⌘Z', run:redo});
+  c.push({k:'edit', n:'Randomize settings', h:'R', run:randomize});
+  c.push({k:'view', n:'Zoom in', run:()=>stepZoom(1)});
+  c.push({k:'view', n:'Zoom out', run:()=>stepZoom(-1)});
   c.push({k:'palette', n:'Sample palette from image', run:()=>$('#extract').click()});
   c.push({k:'tone', n:'Toggle invert', run:()=>{ $('#invert').checked=!$('#invert').checked; schedule(); pushHistory(); }});
   c.push({k:'dither', n:'Toggle serpentine scan', run:()=>{ $('#serp').checked=!$('#serp').checked; schedule(); pushHistory(); }});
@@ -1993,6 +2707,7 @@ $('#cmdscrim').addEventListener('mousedown', e=>{ if(e.target===$('#cmdscrim')) 
 /* ---------- keyboard ---------- */
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openCmd(); return; }
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
   if(e.key==='Escape'){
     if($('#cmdscrim').classList.contains('on')) return closeCmd();
     if($('#expscrim').classList.contains('on')) return closeExport();
@@ -2006,11 +2721,15 @@ document.addEventListener('keydown',e=>{
   if(e.key==='e'){ openExport(); }
   if(e.key==='f'){ setFocus(!document.body.classList.contains('focus')); }
   if(e.key==='c'){ setCompare(!compareOn); }
+  if(e.key==='r'){ randomize(); }
+  if(e.key==='+'||e.key==='='){ stepZoom(1); }
+  if(e.key==='-'){ stepZoom(-1); }
+  if(e.key===' ' && isVideo){ e.preventDefault(); vToggle(); }
 });
 
 /* ---------- boot ---------- */
 syncOuts(); updateVisibility(); paintPalQuick(); paintSwatches(currentPalette());
-renderAlgoCard(); renderHistory(); renderFontList();
+renderAlgoCard(); renderFontList(); pushHistory(true);
 </script>
 </body>
 </html>

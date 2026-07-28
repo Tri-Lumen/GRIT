@@ -81,6 +81,7 @@ EOF
 | `<main id="stage">` | Mode tabs, preview canvas `#out`, empty state `#empty`, ASCII text panel `#textwrap`, status bar, focus-mode `#dock`. |
 | `#cmdscrim` / `#expscrim` | Command palette and export dialog overlays. |
 | `algorithms` | `ED` (error-diffusion kernels) and `ORD` (ordered matrices). |
+| `blue noise` | `blueNoiseTile()` — void-and-cluster. Hangs off a lazy getter on `ORD.blue.m`. |
 | `algorithm copy` | `ALGO_INFO` — blurb / pro / con / "best for" per algorithm, for the info card. |
 | `palettes` | `PALETTES` map, `PAL_QUICK` (the five surfaced swatches). |
 | `charsets` | `CHARSETS` map. |
@@ -90,6 +91,7 @@ EOF
 | `helpers` | `v()` / `num()` read control values by id. `toast()`. `syncOuts()` updates slider readouts. |
 | `palette resolution` | `currentPalette()` → array of `[r,g,b]`. |
 | `image adjustments` | `adjust(imageData)` — gamma, contrast, brightness, saturation, grain, invert, mono collapse. Mutates in place. |
+| `effects` | `convolve()`, `effects()` — blur/sharpen/edge/posterize/bloom/scanlines, between `adjust()` and `ditherPixels()`. |
 | `quantize` | `nearest()`, `stepGuess()`, `ditherPixels()` — the core. |
 | `median cut extraction` | `extractPalette(n)`. |
 | `render: dither` | `renderDither()`. |
@@ -100,6 +102,10 @@ EOF
 | `config transport` | `readCfg()` / `applyCfg()` / `CFG_IDS` / `DEFAULTS`. Shared by presets, history, reset and the clipboard. |
 | `history` | `pushHistory()` (debounced 800ms), `renderHistory()`. Parameter snapshots, never bitmaps. |
 | `font picker` | Measurement-based `isInstalled()` / `gridSafe()`, facets, `renderFontList()`. |
+| `vector + markup export` | `svgDither()`, `svgAscii()`, `buildHtml()` — run-merged SVG and standalone HTML. |
+| `animated GIF` | `lzwEncode()`, `gifEncoder()` — GIF89a written by hand. |
+| `ZIP` | `crc32()`, `zipStore()` — stored-mode ZIP for PNG frame sequences. |
+| `clip transport` | `seekTo()`, `vToggle()`, `eachFrame()` and the three clip exporters. |
 | `command palette` | `buildCommands()` — every action reachable from `⌘K`. |
 | `input wiring` → end | Event listeners, file/drop/paste loading, exports, settings JSON, hotkeys. |
 
@@ -128,9 +134,10 @@ EOF
 ## The pipeline
 
 ```
-source image
+source image or video frame
   → downscale to grid (smoothing ON, this is the only place blur is wanted)
   → adjust()          brightness/contrast/gamma/saturation/grain/invert
+  → effects()         blur → sharpen → edge → posterize → bloom → scanlines
   → ditherPixels()    error diffusion or ordered, against a palette
   → upscale (smoothing OFF) into #out        [dither mode]
   → or map levels to glyphs and draw text    [ascii mode]
@@ -168,6 +175,16 @@ has dither texture instead of banding.
 - **Embedded fonts are latin-only.** They have no block shades or braille. Art
   surfaces (`#textout`, the default `#font` option) must use `--art`, not `--mono`,
   or per-glyph fallback shears the ASCII grid. See `docs/STYLE_GUIDE.md`.
+- **A `<video>` is a valid `drawImage` source**, so clips need no separate pipeline —
+  `img` just holds the video element and `isVideo` gates the transport UI. Anything
+  that swaps the source must reset `isVideo` and call `vStop()`, or the Clip block
+  is left behind (that bug shipped once already, from `loadTestCard`).
+- **Frame stepping must await `seeked`.** Setting `currentTime` is async; drawing
+  before the event fires silently re-encodes the previous frame.
+- **History debouncing loses discrete states.** `pushHistory()` debounces 800ms so a
+  slider drag records once, but a discrete action (load, preset, algorithm pick)
+  must pass `pushHistory(true)` — otherwise the next edit clears the pending timer
+  and undo can never step back into that state.
 - **Font availability can't be measured at boot.** `document.fonts.ready` has not
   settled, so the embedded faces measure as missing. The font picker recomputes
   once it resolves.
@@ -189,5 +206,12 @@ Known rough edges:
   is capped at 40 snapshots and debounced 800ms, so a slider drag records once.
 - The export dialog's file-size figure is an estimate (~0.35 bytes/px), not a real
   encode. It is a hint, not a promise.
-- 22 of the 25 `ALGO_INFO` blurbs were written during implementation, not by
+- 22 of the 26 `ALGO_INFO` blurbs were written during implementation, not by
   Design. Flagged in `docs/STYLE_GUIDE.md` for review.
+- Clip encoding runs the full pipeline per frame on the main thread. A long clip
+  at a high frame rate takes real time; there's a progress bar and a cancel, but
+  no worker.
+- The GIF encoder uses one colour table for the whole clip, taken from the active
+  palette. Correct for dithered output, which is already quantized; it would band
+  on un-dithered source.
+- The ZIP writer is stored-mode only. Fine for PNGs, which are already deflated.

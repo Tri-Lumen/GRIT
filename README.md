@@ -13,15 +13,17 @@ Open `index.html`. Drag in an image, paste from the clipboard, or click
 - **12 error-diffusion algorithms** — Floyd–Steinberg, Jarvis–Judice–Ninke,
   Stucki, Atkinson, Burkes, three Sierras, Stevenson–Arce, and two degenerate
   smear kernels — with adjustable diffusion strength and serpentine scanning
-- **13 ordered patterns** — Bayer 2/4/8/16, clustered dot, halftone, line and
-  diagonal screens, interleaved gradient noise, white noise, plain threshold —
-  with an adjustable pattern spread
+- **14 ordered patterns** — Bayer 2/4/8/16, clustered dot, halftone, line and
+  diagonal screens, interleaved gradient noise, true blue noise (void-and-cluster),
+  white noise, plain threshold — with an adjustable pattern spread
 - **Decoupled grid and cell size**, so you can dither at low resolution and
   export chunky at any scale with hard pixel edges
 - **Palettes** — custom two-tone, N-level grayscale, Game Boy DMG and Pocket,
   CGA, C64, PICO-8, Sweetie 16, NES, amber and green CRT, newsprint, riso duo,
   Solarized, plus median-cut extraction from your own image
 - Mono or colour quantization; brightness, contrast, gamma, saturation, grain, invert
+- **Effects stack** applied before dithering — blur, sharpen, edge detect,
+  posterize, bloom, scanlines
 
 ## ASCII mode
 
@@ -38,6 +40,17 @@ Open `index.html`. Drag in an image, paste from the clipboard, or click
   transparent paper
 - Ramp direction follows ink/paper contrast automatically
 
+## Clips
+
+Drop in a video and every frame runs the full pipeline.
+
+- Transport with scrubbing, playback and a frame-rate control
+- Export as an **animated GIF**, **WebM**, or a **PNG frame sequence in a ZIP**
+- Progress and cancel on every encode
+
+No dependencies were added for any of it — the GIF and ZIP encoders are written
+into the file.
+
 ## Interface
 
 - **Workbench** — a left control rail with Adjust / Presets / History tabs
@@ -46,12 +59,17 @@ Open `index.html`. Drag in an image, paste from the clipboard, or click
 - **⌘K command palette** — every algorithm, palette, ramp, font and action
 - **Algorithm info card** — a live thumbnail rendered with the real algorithm,
   plus what each one is good and bad at
-- **History** — parameter snapshots you can jump back to (in memory; no storage)
+- **History** — parameter snapshots you can jump back to, with ⌘Z / ⇧⌘Z undo and
+  redo (in memory; no storage)
+- **Zoom** from 25% to 800%, or fit
+- **Palette editor** — recolour any extracted swatch in place
+- Drop a settings `.json` onto the window to apply it
 
 ## Export
 
-PNG at 1–8× scale, image to clipboard, `.txt` for ASCII output, and the live
-text panel is selectable.
+**PNG** at 1–8× scale, **SVG** (horizontal runs merged into one path per colour —
+for plotters and screen printing), **TXT**, and standalone **HTML**. Anything can
+go to the clipboard instead of a file, and the live text panel is selectable.
 
 Settings copy in and out as JSON from the **Presets** tab — paste a look into a
 notes file to keep it. Nothing is written to browser storage.
@@ -67,6 +85,10 @@ notes file to keep it. Nothing is written to browser storage.
 | `s` | Save PNG |
 | `f` | Focus mode |
 | `c` | Compare with source |
+| `r` | Randomize |
+| `+` / `-` | Zoom |
+| `space` | Play/pause a clip |
+| `⌘Z` / `⇧⌘Z` | Undo / redo |
 | `esc` | Close dialog / leave focus mode |
 | `⌘V` / `Ctrl+V` | Paste image from clipboard |
 

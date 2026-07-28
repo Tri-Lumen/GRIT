@@ -118,6 +118,8 @@ Build one component, not two.
 | `.line` | Label + control on one line (`.ll` label, control right). |
 | `input.tgl` | 34×19 toggle, 14px knob, 180ms transition. A real checkbox — `v('id')` still works. |
 | `.sw` / `.swrow` | 26px palette swatch, a 135° two-stop split of the palette's darkest/lightest pair. |
+| `#swatches.editable` | The extracted-palette strip when its bands are click-to-recolour. |
+| `.progtrack` | 3px progress bar, accent fill. Used by the clip encoders. |
 
 ### Rules
 - 8px spacing grid. Spacing scale: 4 / 6 / 8 / 10 / 12 / 14 / 16 / 22 / 26.
@@ -155,10 +157,13 @@ Sentence case for UI labels; section labels are uppercased by CSS, not by the
 string. British spelling for "colour" in user-facing text (matches the handoff).
 
 The algorithm info card's copy lives in `ALGO_INFO`. **Only `ed:fs`, `ed:atkinson`
-and `ord:bayer8` are the designer's verbatim strings** — the other 22 were written
-during implementation and are pending design review. The handoff's fourth featured
-algorithm was "Blue noise", which GRIT does not implement (see ROADMAP); the quick-pick
-grid substitutes **White noise** with its own copy.
+and `ord:bayer8` are the designer's verbatim strings** — the other 23 were written
+during implementation and are pending design review.
+
+The handoff's fourth featured algorithm, **Blue noise**, now exists (void-and-cluster,
+`ORD.blue`) and its copy adapts the designer's line. The quick-pick grid still shows
+**White noise**, because that is what the previous build shipped and changing a
+default look silently is worse than a small divergence — say the word and it swaps.
 
 ---
 
@@ -168,9 +173,11 @@ Things the comps show that GRIT does not implement, and why:
 
 - **Camera source chip** — no webcam capture; the slot is used for *Test card* instead,
   which is the zero-state feature GRIT actually has.
-- **SVG / HTML export** — not implemented (see ROADMAP), so the export dialog's format
-  grid is 2-up (PNG / TXT) rather than 4-up. Dead buttons are worse than a shorter grid.
 - **Hybrid mode** — GRIT has Dither and ASCII; there is no third pipeline.
+- **Animation formats** are a second, separately-labelled row under the comp's 4-up
+  FORMAT grid, shown only when the source is a clip. The comps predate clip support.
+  During an encode the dialog stays up and the scale/clipboard rows are swapped for
+  a progress bar and Cancel, and the primary button reads **Encode** rather than **Save it**.
 - **Traffic lights** are decorative. GRIT is a web page, not a Tauri window; they are
   drawn because the handoff's chrome is part of the look, but they do nothing.
 - **`before ⇄ after`** is a toggle, not a drag-divider. Any control change returns to "after".
