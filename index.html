@@ -559,6 +559,18 @@
           </div>
         </div>
 
+        <div class="blk hidden" id="blk-batch">
+          <button class="sec">Batch</button>
+          <div class="blkbody">
+            <div class="note" id="batchinfo"></div>
+            <div class="chips">
+              <button class="chip accent" id="batchgo" data-nobind>Export all as ZIP</button>
+              <button class="chip" id="batchclear" data-nobind>Clear queue</button>
+            </div>
+            <div class="note">Every queued image runs through the settings you have set now. Sizes can differ — the grid is in cells relative to each source, not pixels.</div>
+          </div>
+        </div>
+
         <div class="blk hidden" id="blk-video">
           <button class="sec">Clip</button>
           <div class="blkbody">
@@ -571,7 +583,22 @@
             <div class="sld"><span class="lab">Frame rate <b data-out="vfps">12</b> fps</span>
               <input type="range" id="vfps" min="1" max="30" value="12"></div>
             <label class="line"><span class="ll">Loop playback</span><input type="checkbox" class="tgl" id="vloop" checked></label>
-            <div class="note">Every frame runs the full pipeline. Export the clip as GIF, WebM or a PNG sequence from the export dialog.</div>
+            <label class="sld"><span class="lab">Temporal variation</span>
+              <select id="tvar">
+                <option value="off">Off — dither sits still</option>
+                <option value="noise">Noise — grain reshuffles</option>
+                <option value="drift">Drift — pattern slides right</option>
+                <option value="roll">Roll — pattern slides down</option>
+                <option value="diag">Diagonal — slides both ways</option>
+                <option value="spin">Spin — pattern orbits</option>
+                <option value="jitter">Jitter — random each frame</option>
+                <option value="pulse">Pulse — threshold breathes</option>
+                <option value="flicker">Flicker — exposure wavers</option>
+                <option value="sweep">Sweep — threshold ramps</option>
+              </select></label>
+            <div class="sld" id="wrap-tvamt"><span class="lab">Variation amount <b data-out="tvamt">40</b></span>
+              <input type="range" id="tvamt" min="0" max="100" value="40"></div>
+            <div class="note">Every frame runs the full pipeline. Temporal variation moves the dither between frames instead of letting a static pattern sit on a moving picture — it applies during playback and to every exported frame. Export as GIF, WebM or a PNG sequence from the export dialog.</div>
           </div>
         </div>
 
@@ -754,7 +781,12 @@
             <label class="sld hidden" id="wrap-custom"><span class="lab">Custom ramp (dark → light)</span>
               <input type="text" id="custom" value="@%#*+=-:. "></label>
             <label class="line"><span class="ll">Invert ramp</span><input type="checkbox" class="tgl" id="rampinv"></label>
-            <div class="note">Braille packs a 2×4 dither grid into every character — highest detail per cell, and it copies as text.</div>
+            <div class="sld" id="wrap-cdepth"><span class="lab">Character depth <b data-out="cdepth">0</b></span>
+              <input type="range" id="cdepth" min="0" max="32" value="0"></div>
+            <div class="sld" id="wrap-choff"><span class="lab">Character offset <b data-out="choff">0</b></span>
+              <input type="range" id="choff" min="-100" max="100" value="0"></div>
+            <div class="note" id="rampwarn" style="color:var(--accent); display:none"></div>
+            <div class="note">Braille packs a 2×4 dither grid into every character — highest detail per cell, and it copies as text. <b>Depth</b> uses only the first N glyphs of the ramp (0 = all of them); <b>offset</b> slides the whole luminance-to-glyph mapping.</div>
           </div>
         </div>
 
@@ -830,8 +862,9 @@
               <button class="chip" id="pastecfg">Paste settings</button>
             </div>
             <div class="chips" style="margin-top:8px">
-              <button class="chip" id="copypack">Copy preset pack</button>
-              <button class="chip" id="pastepack">Paste preset pack</button>
+              <button class="chip accent" id="savelook" data-nobind>Save this look</button>
+              <button class="chip" id="copypack" data-nobind>Copy pack</button>
+              <button class="chip" id="pastepack" data-nobind>Paste pack</button>
             </div>
             <div class="note">Settings travel as a JSON string, so you can keep looks in a notes file and paste them back. A <em>pack</em> carries several named looks at once. Nothing is written to browser storage.</div>
           </div>
@@ -933,6 +966,10 @@
           <button data-fmt="svg" aria-pressed="false">SVG</button>
           <button data-fmt="txt" aria-pressed="false">TXT</button>
           <button data-fmt="html" aria-pressed="false">HTML</button>
+        </div>
+        <div class="sec hidden" id="fmt-batch-lab" style="margin:14px 0 9px">Batch</div>
+        <div class="fmt hidden" id="fmtbatch" style="grid-template-columns:1fr">
+          <button data-fmt="batch" aria-pressed="false">All queued images → ZIP</button>
         </div>
         <div class="sec hidden" id="fmt-anim-lab" style="margin:14px 0 9px">Animation</div>
         <div class="fmt hidden" id="fmtanim" style="grid-template-columns:1fr 1fr 1fr">
@@ -1710,6 +1747,31 @@ function mulberry(seed){
 }
 let fxSeed = 7;        // set once per render, from #fxseed + frameSeed
 let frameSeed = 0;     // advanced per frame by temporal variation
+let frameIndex = 0;    // which frame of a clip is being drawn
+
+/* ---------- temporal variation ----------
+   A static dither sitting on top of a moving picture reads as a screen door in
+   front of the image rather than as texture in it. Each mode moves the
+   threshold field between frames in a different way. Everything is a pure
+   function of frameIndex, so an exported frame matches what playback showed. */
+function temporal(){
+  const kind = v('tvar'), amt = num('tvamt')/100;
+  const z = {ox:0, oy:0, dt:0, bias:0, seed:0};
+  if(kind==='off' || !amt || !isVideo) return z;
+  const f = frameIndex;
+  switch(kind){
+    case 'noise':   return {...z, seed:f*7919};
+    case 'drift':   return {...z, ox:Math.round(f*amt*3)};
+    case 'roll':    return {...z, oy:Math.round(f*amt*3)};
+    case 'diag':    return {...z, ox:Math.round(f*amt*2), oy:Math.round(f*amt*2)};
+    case 'spin':    return {...z, ox:Math.round(Math.cos(f*0.3)*amt*8), oy:Math.round(Math.sin(f*0.3)*amt*8)};
+    case 'jitter':  return {...z, dt:(mulberry(f+1)()-0.5)*amt, seed:f*7919};
+    case 'pulse':   return {...z, dt:Math.sin(f*0.4)*amt*0.5};
+    case 'flicker': return {...z, bias:Math.sin(f*0.7)*amt*40};
+    case 'sweep':   return {...z, bias:((f*amt*8)%80)-40};
+  }
+  return z;
+}
 
 function adjust(d){
   const bri = num('bright')*2.55;
@@ -2005,16 +2067,20 @@ function stepGuess(pal){
 
 function ditherPixels(d, w, h, pal, algoKey, opts){
   const [kind,key] = algoKey.split(':');
-  const bias = opts.bias;
+  const tv = opts.tv || {ox:0, oy:0, dt:0, bias:0};
+  const bias = opts.bias + tv.bias;
   if(kind==='ord'){
     const O = ORD[key], sp = opts.spread * stepGuess(pal);
     // Parametric screens build a specialised threshold function once per render
     // (make) rather than reading their controls inside the pixel loop.
     const fn = O.make ? O.make(w,h) : O.fn;
     const a = d.data;
+    const mh = O.m ? O.m.length : 1, mw = O.m ? O.m[0].length : 1;
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
       const i=(y*w+x)*4;
-      let t = fn ? fn(x,y,w,h) : O.m[y%O.m.length][x%O.m[0].length];
+      let t = fn ? fn(x+tv.ox, y+tv.oy, w, h)
+                 : O.m[(((y+tv.oy)%mh)+mh)%mh][(((x+tv.ox)%mw)+mw)%mw];
+      t += tv.dt;
       const off = (t-0.5)*sp + bias;
       const c = nearest(pal, a[i]+off, a[i+1]+off, a[i+2]+off);
       a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
@@ -2153,6 +2219,7 @@ function renderDither(){
     spread: num('spread'),
     bias: num('bias')*1.28,
     serp: v('serp'),
+    tv: temporal(),
   };
   if(v('algo')==='ord:screen' && v('cmyk')) cmykScreen(d, cols, rows, opts);
   else if(v('palmap')==='luma') ditherByTone(d, cols, rows, pal, v('algo'), opts);
@@ -2176,7 +2243,19 @@ function charsetChars(){
   const key = v('charset'), C = CHARSETS[key];
   let s = C.custom ? v('custom') : (C.s || " ");
   if(!s.length) s = " ";
-  return Array.from(s); // index 0 is always the densest glyph
+  const chars = Array.from(s); // index 0 is always the densest glyph
+  // Character depth: keep only the first N steps of the ramp. ASCII mode
+  // dithers against an N-level ramp where N is the charset length, so this is
+  // literally changing N — a one-line control with a large visual effect.
+  const D = Math.round(num('cdepth'));
+  if(D >= 2 && D < chars.length){
+    // always keep the last glyph: every ramp ends with the empty one
+    const out = [];
+    for(let i=0;i<D-1;i++) out.push(chars[Math.round(i*(chars.length-2)/(D-2 || 1))]);
+    out.push(chars[chars.length-1]);
+    return out;
+  }
+  return chars;
 }
 // Dense glyphs belong on bright areas when the ink is lighter than the paper.
 function denseOnBright(){
@@ -2197,7 +2276,7 @@ function renderAscii(){
   const chh = Math.max(1, fsize*lhf);
   const rows = Math.max(1, Math.round(cols * (img.height/img.width) * (cw/chh)));
 
-  const opts = {strength:num('strength')/100, spread:num('spread'), bias:num('bias')*1.28, serp:v('serp')};
+  const opts = {strength:num('strength')/100, spread:num('spread'), bias:num('bias')*1.28, serp:v('serp'), tv:temporal()};
   const inkMode = v('acolor');
 
   // color sampling pass (undithered averages)
@@ -2252,12 +2331,14 @@ function renderAscii(){
     const ramp=[]; for(let i=0;i<N;i++){ const g=Math.round(i*255/Math.max(1,N-1)); ramp.push([g,g,g]); }
     ditherPixels(d,cols,rows,ramp,v('algo'),opts);
     const a=d.data;
+    // offset slides the whole luminance→glyph mapping along the ramp
+    const off = num('choff')/100 * (N-1);
     for(let r=0;r<rows;r++){
       const line=[];
       for(let c=0;c<cols;c++){
         const lum=a[(r*cols+c)*4];
         const t = bright ? (255-lum) : lum;
-        const idx=Math.max(0,Math.min(N-1,Math.round(t/255*(N-1))));
+        const idx=Math.max(0,Math.min(N-1,Math.round(t/255*(N-1) + off)));
         line.push(chars[idx]);
       }
       lines.push(line);
@@ -2354,6 +2435,7 @@ function render(){
   paintPalQuick();
   document.body.classList.toggle('empty', !img);
   distMode = v('dist');
+  frameSeed = temporal().seed;
   fxSeed = Math.round(num('fxseed')) + frameSeed;
   if(!img){ setStatus('—', 0); $('#st-time').textContent='—'; return; }
   if(compareOn){ drawCompare(); return; }
@@ -2394,7 +2476,20 @@ function updateVisibility(){
   $$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.classList.toggle('on', b.getAttribute('aria-pressed')==='true'));
   $('#wrap-duo').classList.toggle('hidden', !P.duo);
   $('#wrap-ncol').classList.toggle('hidden', !P.extracted);
-  $('#wrap-custom').classList.toggle('hidden', !CHARSETS[v('charset')].custom);
+  const CS = CHARSETS[v('charset')];
+  $('#wrap-custom').classList.toggle('hidden', !CS.custom);
+  // Sets marked `u` need glyphs the embedded latin-only faces do not carry. A
+  // substituted glyph rarely has the same advance width, which shears the grid,
+  // so measure the widest character in the set against the active font and say so.
+  const warn = $('#rampwarn');
+  let sheared = false;
+  if(isAscii && CS.u && !CS.custom){
+    const probe = CS.braille ? '⣿' : Array.from(CS.s)[0];
+    sheared = !gridSafe({v:v('font')}, probe);
+  }
+  warn.style.display = sheared ? '' : 'none';
+  if(sheared) warn.textContent =
+    `This font has no glyph for ${CHARSETS[v('charset')].n.toLowerCase()} — the substitute is a different width, so the grid will shear. Filter the font list by the matching facet, or pick another set.`;
   $$('#mode button, #dockmode button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.mode===mode)));
   $$('#colormode button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.cm===colormode)));
   $$('#rampquick .row').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.cs===v('charset'))));
@@ -2427,7 +2522,8 @@ const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell
   'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop',
   'depth','palmap','rampcurve','dist',
   'htshape','htangle','htfreq','htink','htgain','cmyk','ucr',
-  'fxorder','fxchroma','fxjpeg','fxwave','fxsort','fxslice','fxvig','fxseed'];
+  'fxorder','fxchroma','fxjpeg','fxwave','fxsort','fxslice','fxvig','fxseed',
+  'tvar','tvamt','choff','cdepth'];
 // A control listed here without a matching element used to throw on boot. It is
 // the single easiest mistake to make in this file, so both directions skip
 // quietly instead — an id that has not landed yet simply does not round-trip.
@@ -2590,11 +2686,38 @@ function applyLook(L){
   pushHistory(true);
   toast(`${L.n} applied`);
 }
+/* User looks live alongside the built-ins and travel as a *pack* — one JSON
+   blob carrying several named looks. Still no storage: a pack lives in the
+   clipboard or a text file, the same way a single preset already does. */
+let userLooks = [];
+function captureLook(name){
+  const cfg = readCfg();
+  delete cfg.extracted;                 // belongs to the image, not the look
+  return {n:name, d:'saved look', g:'Yours', cfg, cm:colormode, mode:cfg.mode};
+}
+function packJson(){
+  return JSON.stringify({grit:'preset-pack', v:1, looks:userLooks}, null, 2);
+}
+function loadPack(text){
+  const o = JSON.parse(text);
+  const looks = Array.isArray(o) ? o : o.looks;
+  if(!Array.isArray(looks) || !looks.length) throw new Error('no looks in that pack');
+  // keep only entries that carry a config we can actually apply
+  const good = looks.filter(L=>L && L.cfg && typeof L.cfg==='object')
+                    .map(L=>({n:String(L.n||'Untitled'), d:String(L.d||'from a pack'), g:'Yours',
+                              cfg:L.cfg, cm:L.cm, mode:L.mode}));
+  if(!good.length) throw new Error('no usable looks in that pack');
+  userLooks = good;
+  renderPresets();
+  return good.length;
+}
 function renderPresets(){
   const w=$('#presetlist'); w.innerHTML='';
   let group='';
-  for(const k in LOOKS){
-    const L=LOOKS[k];
+  const all = {...LOOKS};
+  userLooks.forEach((L,i)=>{ all['user'+i] = L; });
+  for(const k in all){
+    const L=all[k];
     if(L.g && L.g!==group){
       group=L.g;
       const s=document.createElement('div');
@@ -3064,7 +3187,19 @@ function browse(){ $('#file').click(); }
 $('#browse').addEventListener('click', browse);
 $('#emptybrowse').addEventListener('click', browse);
 $('#empty').addEventListener('click', e=>{ if(e.target===$('#empty')||e.target.classList.contains('et')) browse(); });
-$('#file').addEventListener('change',e=>loadFile(e.target.files[0]));
+// several images at once queue up for batch export; the first is also loaded
+// so the settings can be dialled in against something real
+function loadFiles(list){
+  const files = Array.from(list||[]);
+  if(!files.length) return;
+  const images = files.filter(f=>f.type.startsWith('image/'));
+  setBatch(images.length > 1 ? images : []);
+  loadFile(files[0]);
+  if(images.length > 1) toast(`${images.length} images queued for batch`);
+}
+$('#file').addEventListener('change',e=>loadFiles(e.target.files));
+$('#batchgo').addEventListener('click', exportBatch);
+$('#batchclear').addEventListener('click',()=>{ setBatch([]); toast('Batch queue cleared'); });
 $('#pastebtn').addEventListener('click', async ()=>{
   try{
     const items = await navigator.clipboard.read();
@@ -3077,7 +3212,7 @@ $('#pastebtn').addEventListener('click', async ()=>{
 });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ e.preventDefault(); document.body.classList.add('dragging'); }));
 ['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{ e.preventDefault(); if(ev==='drop'||e.target===document.documentElement) document.body.classList.remove('dragging'); }));
-document.addEventListener('drop',e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+document.addEventListener('drop',e=>{ e.preventDefault(); loadFiles(e.dataTransfer.files); });
 document.addEventListener('paste',e=>{
   const items=e.clipboardData && e.clipboardData.items; if(!items) return;
   for(const it of items){ if(it.type.startsWith('image/')){ loadFile(it.getAsFile()); break; } }
@@ -3146,6 +3281,9 @@ function vToggle(){
   const tick=()=>{
     if(!vPlaying) return;
     if(img.ended && !v('vloop')) return vStop();
+    // keep the frame counter on the clip's own timeline, not the display's, so
+    // playback and an export at the same fps show the same variation
+    frameIndex = Math.round(img.currentTime * Math.round(num('vfps')));
     syncClipReadout();
     render();
     vRaf=requestAnimationFrame(tick);
@@ -3188,6 +3326,7 @@ async function eachFrame(fn){
   vStop();
   for(let i=0;i<total;i++){
     if(encodeCancelled) return {cancelled:true, total};
+    frameIndex = i;                    // drives temporal variation
     await seekTo(i/fps);
     render();
     await fn(i, total);
@@ -3263,6 +3402,57 @@ async function exportFrames(){
   toast(`${files.length} frames saved`);
 }
 
+/* ---------- batch ----------
+   Drop several images, apply the current settings to each, get one ZIP. Dither
+   Boy restricts this to same-size images; there is no reason to here, because
+   the grid is expressed in cells relative to the source aspect, so a mixed set
+   just works. Reuses the clip exporter's progress bar and cancel token. */
+let batchFiles = [];
+function setBatch(files){
+  batchFiles = files;
+  const n = files.length;
+  $('#batchinfo').textContent = n ? `${n} files queued · export as Batch` : '';
+  $('#blk-batch').classList.toggle('hidden', n < 2);
+}
+function loadImageFile(f){
+  return new Promise((res, rej)=>{
+    const url = URL.createObjectURL(f);
+    const im = new Image();
+    im.onload = ()=>{ URL.revokeObjectURL(url); res(im); };
+    im.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error('unreadable')); };
+    im.src = url;
+  });
+}
+async function exportBatch(){
+  if(batchFiles.length < 2) return toast('Drop several images first');
+  const keepImg = img, keepName = imgName, keepVideo = isVideo;
+  encodeCancelled = false;
+  showProgress(true, 'Rendering…');
+  const files = [], skipped = [];
+  for(let i=0;i<batchFiles.length;i++){
+    if(encodeCancelled) break;
+    const f = batchFiles[i];
+    try{
+      const im = await loadImageFile(f);
+      isVideo = false; img = im; imgName = f.name.replace(/\.[^.]+$/,'');
+      render();
+      const blob = await new Promise(r=>out.toBlob(r));
+      files.push({name:`${imgName}-${mode}.png`, data:new Uint8Array(await blob.arrayBuffer())});
+    }catch(e){ skipped.push(f.name); }
+    setProgress((i+1)/batchFiles.length, `Image ${i+1} of ${batchFiles.length}`);
+    await new Promise(r=>setTimeout(r,0));
+  }
+  img = keepImg; imgName = keepName; isVideo = keepVideo;
+  render();
+  showProgress(false);
+  if(encodeCancelled || !files.length) return toast('Batch cancelled');
+  setProgress(1, 'Zipping…');
+  download(zipStore(files), `${files.length}-grit-batch.zip`);
+  toast(skipped.length
+    ? `${files.length} saved · ${skipped.length} could not be read`
+    : `${files.length} images saved`);
+}
+
 /* ---------- exports ---------- */
 function download(blob, name){
   const a=document.createElement('a');
@@ -3309,8 +3499,11 @@ function openExport(){
   if(!img) return toast('Load an image first');
   if(mode!=='ascii' && expFormat==='txt') expFormat='png';
   if(!isVideo && ANIM_FMTS.includes(expFormat)) expFormat='png';
+  if(expFormat==='batch' && batchFiles.length<2) expFormat='png';
   $('#fmtanim').classList.toggle('hidden', !isVideo);
   $('#fmt-anim-lab').classList.toggle('hidden', !isVideo);
+  $('#fmtbatch').classList.toggle('hidden', batchFiles.length<2);
+  $('#fmt-batch-lab').classList.toggle('hidden', batchFiles.length<2);
   markFormat();
   updateExportSummary();
   showProgress(false);
@@ -3319,13 +3512,13 @@ function openExport(){
 }
 function closeExport(){ encodeCancelled=true; showProgress(false); $('#expscrim').classList.remove('on'); }
 function markFormat(){
-  $$('#fmt button, #fmtanim button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
-  const anim = ANIM_FMTS.includes(expFormat);
+  $$('#fmt button, #fmtanim button, #fmtbatch button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
+  const anim = ANIM_FMTS.includes(expFormat) || expFormat==='batch';
   // scale, transparency and clipboard don't apply to a clip encode
   $('#scalequick').closest('.line').classList.toggle('hidden', anim);
   $('#oscale').closest('.sld').classList.toggle('hidden', anim);
   $('#toclip').closest('.line').classList.toggle('hidden', anim || expFormat==='zip');
-  $('#expgo').textContent = anim ? 'Encode' : 'Save it';
+  $('#expgo').textContent = expFormat==='batch' ? 'Export all' : (anim ? 'Encode' : 'Save it');
 }
 function fmtBytes(kb){ return kb>1024 ? (kb/1024).toFixed(1)+' MB' : Math.max(1,Math.round(kb))+' KB'; }
 function updateExportSummary(){
@@ -3341,6 +3534,9 @@ function updateExportSummary(){
     const src = expFormat==='svg' ? buildSvg() : buildHtml();
     name.textContent = `${imgName}.${expFormat}`;
     dims.textContent = src ? `vector · ~${fmtBytes(src.length/1024)}` : 'nothing rendered yet';
+  } else if(expFormat==='batch'){
+    name.textContent = `${batchFiles.length}-grit-batch.zip`;
+    dims.textContent = `${batchFiles.length} images · current settings applied to each`;
   } else if(ANIM_FMTS.includes(expFormat)){
     const fps=Math.round(num('vfps')), frames=Math.max(1,Math.floor((img&&img.duration||0)*fps));
     name.textContent = `${imgName}.${expFormat==='zip'?'zip':expFormat}`;
@@ -3351,7 +3547,7 @@ function updateExportSummary(){
     dims.textContent = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
   }
 }
-$$('#fmt button, #fmtanim button').forEach(b=>b.addEventListener('click',()=>{
+$$('#fmt button, #fmtanim button, #fmtbatch button').forEach(b=>b.addEventListener('click',()=>{
   expFormat=b.dataset.fmt; markFormat(); updateExportSummary();
 }));
 $('#openexport').addEventListener('click', openExport);
@@ -3366,7 +3562,8 @@ $('#expgo').addEventListener('click', async ()=>{
     // clip encodes keep the dialog up so the progress bar is visible, then close
     case 'gif':  await exportGif();    closeExport(); return;
     case 'webm': await exportWebm();   closeExport(); return;
-    case 'zip':  await exportFrames(); closeExport(); return;
+    case 'zip':   await exportFrames(); closeExport(); return;
+    case 'batch': await exportBatch();  closeExport(); return;
     default:     clip ? copyImg() : savePng();
   }
   closeExport();
@@ -3385,6 +3582,27 @@ $('#pastecfg').addEventListener('click',async ()=>{
   if(!s) return;
   try{ applyCfg(JSON.parse(s)); pushHistory(); toast('Settings applied'); }
   catch(e){ toast('That was not valid settings JSON'); }
+});
+$('#savelook').addEventListener('click',()=>{
+  const name = (prompt('Name this look:', `Look ${userLooks.length+1}`)||'').trim();
+  if(!name) return;
+  userLooks.push(captureLook(name));
+  renderPresets();
+  toast(`"${name}" added — copy the pack to keep it`);
+});
+$('#copypack').addEventListener('click',async ()=>{
+  if(!userLooks.length) return toast('Save a look first');
+  const s = packJson();
+  try{ await navigator.clipboard.writeText(s); toast(`${userLooks.length} looks copied`); }
+  catch(e){ prompt('Copy your preset pack:', s); }
+});
+$('#pastepack').addEventListener('click',async ()=>{
+  let s='';
+  try{ s = await navigator.clipboard.readText(); }catch(e){}
+  if(!s) s = prompt('Paste a preset pack:') || '';
+  if(!s) return;
+  try{ toast(`${loadPack(s)} looks loaded`); }
+  catch(e){ toast('That was not a valid preset pack'); }
 });
 $('#clearhist').addEventListener('click',()=>{ history=[]; renderHistory(); toast('History cleared'); });
 
