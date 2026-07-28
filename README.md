@@ -3,10 +3,17 @@
 Browser-based image dithering and ASCII art. One HTML file, no dependencies, no
 network, no install. Everything runs locally in the browser.
 
+## Get it
+
+Download **[`grit.html` from the latest release](../../releases/latest)** — that
+one file is the whole application. You do not need the rest of this repository.
+
+Save it anywhere and open it in a browser. It runs offline from `file://`.
+
 ## Use
 
-Open `index.html`. Drag in an image, paste from the clipboard, or click
-**Load test card** to generate one.
+Drag in an image, paste from the clipboard, or click **Load test card** to
+generate one.
 
 ## Dither mode
 
