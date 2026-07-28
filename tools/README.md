@@ -41,14 +41,22 @@ Set `CHROME_PATH` to use a browser you already have instead of a downloaded one.
 
 Boots the real file in Chromium and drives it, failing on any page or console
 error. Covers what the pure-function harness cannot: boot, every algorithm in
-both modes, every palette, every charset, every preset, all twelve effect
-passes, effect reordering, temporal variation, the size modes, preset packs, and
-an `applyCfg(readCfg())` round-trip — which is what actually catches a missing
+both dither and ASCII, every palette, every charset, every preset, all twelve
+effect passes, effect reordering, temporal variation, the size modes, preset
+packs, image mode, the panel's mode gating and disclosure level, and an
+`applyCfg(readCfg())` round-trip — which is what actually catches a missing
 `CFG_IDS` entry, the single most repeated mistake in this codebase.
+
+Image mode gets its own section because its guarantees are negative ones: that
+the working size is a ceiling rather than a target, that the output is *not*
+quantized, and that it leaves nothing behind for the vector and text exporters to
+build a stale file out of. The panel section asserts that every mode-gated block
+visible in a mode actually lists it, and that the Basic and All disclosure levels
+hash to the same rendered output.
 
 Pass `--shots` to write screenshots next to the script.
 
-### Two traps worth knowing before you extend it
+### Traps worth knowing before you extend it
 
 - **`window.x` does not reach the app's state.** Top-level `let` in a classic
   script lives in the global *lexical* environment, not on `window`. Read and
@@ -59,3 +67,11 @@ Pass `--shots` to write screenshots next to the script.
   values over a two-colour dither only counts how many pixels are lit, not where
   they are, so a completely reshuffled grain pattern measures as identical. Hash
   with position (`s = s*31 + …`).
+- **The sections share one page, so they share its state.** The preset section
+  leaves the Presets tab up, which puts every rail control at `offsetParent ===
+  null`; a later visibility assertion then passes on an empty set rather than on
+  what it meant to check. If a section depends on something an earlier one may
+  have moved — the open tab, the mode, `colormode` — set it explicitly.
+- **`applyCfg(DEFAULTS)` resets the mode too.** `DEFAULTS.mode` is `dither` and
+  `DEFAULTS.colormode` is `mono`, so anything testing another mode has to restore
+  both after every reset.

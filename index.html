@@ -104,7 +104,7 @@
     background:var(--panel); border-right:1px solid var(--line);
   }
   .railhead{
-    padding:16px 16px 14px; display:flex; align-items:center; justify-content:space-between;
+    padding:16px 16px 14px; display:flex; align-items:center; gap:10px;
   }
   .brand{display:flex; align-items:baseline; gap:8px}
   .wordmark{font:700 16px var(--ui); letter-spacing:.14em; color:var(--text)}
@@ -272,6 +272,25 @@
 
   .note{font:400 10px/1.45 var(--ui); color:var(--t4)}
   .hidden{display:none !important}
+
+  /* Two independent ways for a control to be out of view, deliberately kept
+     apart from .hidden so they can stack. `.offmode` is set from the block's
+     own data-modes list — the block does not belong to the mode you are in.
+     `[data-adv]` is the disclosure level — the control belongs to this mode but
+     is only shown at "All". Neither one changes a value, so switching either
+     way never changes the picture. */
+  .offmode{display:none !important}
+  body.basic [data-adv]{display:none !important}
+
+  #uilevel{margin-left:auto; flex:none; padding:2px; gap:1px}
+  #uilevel button{flex:none; padding:4px 9px; font-size:10px}
+  /* an advanced control sitting away from its default is invisible at Basic, so
+     say so on the button that would reveal it rather than letting it hide */
+  #uilevel .dot{
+    display:none; width:4px; height:4px; border-radius:50%; background:var(--accent);
+    margin-left:5px; vertical-align:middle;
+  }
+  body.basic #uilevel .dot.on{display:inline-block}
 
   /* ---------- source block ---------- */
   #drop{
@@ -515,7 +534,7 @@
   @media (prefers-reduced-motion:reduce){*{transition:none !important}}
 </style>
 </head>
-<body class="empty">
+<body class="empty basic">
 
 <div id="titlebar">
   <div class="lights"><span></span><span></span><span></span></div>
@@ -527,6 +546,10 @@
   <aside id="rail">
     <div class="railhead">
       <div class="brand"><span class="wordmark">GRIT</span><span class="ver">0.1</span></div>
+      <div class="seg" id="uilevel" title="How much of the panel to show">
+        <button data-lvl="basic" aria-pressed="true">Basic</button>
+        <button data-lvl="all" aria-pressed="false">All<i class="dot"></i></button>
+      </div>
       <button id="panelclose" title="Hide panel">✕</button>
     </div>
     <div class="dith-rule"></div>
@@ -602,7 +625,7 @@
           </div>
         </div>
 
-        <div class="blk">
+        <div class="blk" id="blk-algo" data-modes="dither ascii">
           <button class="sec">Algorithm</button>
           <div class="blkbody">
             <div id="algogrid" class="grid2">
@@ -630,9 +653,16 @@
           </div>
         </div>
 
-        <div class="blk">
+        <div class="blk" id="blk-tone">
           <button class="sec">Tone</button>
           <div class="blkbody">
+            <!-- Mono / colour is a tone decision — adjust() is what collapses the
+                 channels — so it lives here rather than in the palette block,
+                 which lets Image mode reach it without a palette in sight. -->
+            <div class="seg" id="colormode">
+              <button data-cm="mono" aria-pressed="true">Mono</button>
+              <button data-cm="color" aria-pressed="false">Colour</button>
+            </div>
             <div class="sld"><span class="lab">Brightness <b data-out="bright">0</b></span>
               <input type="range" id="bright" min="-100" max="100" value="0"></div>
             <div class="sld"><span class="lab">Contrast <b data-out="contrast">0</b></span>
@@ -652,16 +682,36 @@
           <div class="blkbody">
             <div class="fxstack" id="fxstack"></div>
             <input type="hidden" id="fxorder" value="">
-            <div class="sld"><span class="lab">Glitch seed <b data-out="fxseed">7</b></span>
+            <div class="sld" data-adv><span class="lab">Glitch seed <b data-out="fxseed">7</b></span>
               <input type="range" id="fxseed" min="0" max="999" value="7"></div>
-            <div class="chips" style="margin-top:2px">
+            <div class="chips" style="margin-top:2px" data-adv>
               <button class="chip" id="fxreset" data-nobind>Reset order</button>
             </div>
-            <div class="note">Applied to the grid before dithering, top to bottom. 0 disables a pass; the arrows reorder them. The seed fixes the random passes so the preview stops reshuffling on every keystroke.</div>
+            <div class="note">Run top to bottom, after tone and before the mode does anything with the result. 0 disables a pass.</div>
+            <div class="note" data-adv>The arrows reorder the stack. The seed fixes the random passes so the preview stops reshuffling on every keystroke.</div>
           </div>
         </div>
 
-        <div class="blk" id="blk-dither">
+        <div class="blk offmode" id="blk-image" data-modes="image">
+          <button class="sec">Image</button>
+          <div class="blkbody">
+            <label class="sld"><span class="lab">Working size</span>
+              <select id="imgres">
+                <option value="src">Source resolution</option>
+                <option value="2048">2048px long edge</option>
+                <option value="1440">1440px long edge</option>
+                <option value="1080">1080px long edge</option>
+                <option value="720">720px long edge</option>
+                <option value="480">480px long edge</option>
+              </select></label>
+            <div class="sld"><span class="lab">Pixel size (px) <b data-out="imgpx">1</b></span>
+              <input type="range" id="imgpx" min="1" max="48" value="1"></div>
+            <div class="note" id="imginfo">—</div>
+            <div class="note">Tone and effects only — no palette, no quantization, no glyphs. The working size is a ceiling: a source smaller than it is left alone rather than blown up. <b>Pixel size</b> divides the working size into blocks, runs the passes at that reduced size and prints them back nearest-neighbour, so it both pixelates and is the cost lever — every pass is per-pixel.</div>
+          </div>
+        </div>
+
+        <div class="blk" id="blk-dither" data-modes="dither ascii">
           <button class="sec" id="sec-dither">Dither</button>
           <div class="blkbody">
             <div class="line" id="wrap-gridquick"><span class="ll">Scale</span>
@@ -674,13 +724,13 @@
               <input type="range" id="strength" min="0" max="150" value="100"></div>
             <div class="sld" id="wrap-spread"><span class="lab">Pattern spread <b data-out="spread">1.00</b></span>
               <input type="range" id="spread" min="0" max="2.5" step="0.01" value="1"></div>
-            <div class="sld"><span class="lab">Threshold bias <b data-out="bias">0</b></span>
+            <div class="sld" data-adv><span class="lab">Threshold bias <b data-out="bias">0</b></span>
               <input type="range" id="bias" min="-100" max="100" value="0"></div>
-            <label class="line" id="wrap-serp"><span class="ll">Serpentine scan</span><input type="checkbox" class="tgl" id="serp" checked></label>
+            <label class="line" id="wrap-serp" data-adv><span class="ll">Serpentine scan</span><input type="checkbox" class="tgl" id="serp" checked></label>
           </div>
         </div>
 
-        <div class="blk hidden" id="blk-halftone">
+        <div class="blk hidden" id="blk-halftone" data-modes="dither">
           <button class="sec">Halftone screen</button>
           <div class="blkbody">
             <label class="sld"><span class="lab">Dot shape</span>
@@ -701,9 +751,9 @@
               <input type="range" id="htangle" min="0" max="90" value="45"></div>
             <div class="sld"><span class="lab">Ruling (cells per dot) <b data-out="htfreq">6</b></span>
               <input type="range" id="htfreq" min="2" max="32" value="6"></div>
-            <div class="sld"><span class="lab">Black ink <span><b data-out="htink">120</b>%</span></span>
+            <div class="sld" data-adv><span class="lab">Black ink <span><b data-out="htink">120</b>%</span></span>
               <input type="range" id="htink" min="0" max="200" value="120"></div>
-            <div class="sld"><span class="lab">Mid-tone gain <b data-out="htgain">0</b></span>
+            <div class="sld" data-adv><span class="lab">Mid-tone gain <b data-out="htgain">0</b></span>
               <input type="range" id="htgain" min="-100" max="100" value="0"></div>
             <label class="line" id="wrap-cmyk"><span class="ll">CMYK separation</span>
               <input type="checkbox" class="tgl" id="cmyk"></label>
@@ -713,32 +763,28 @@
           </div>
         </div>
 
-        <div class="blk">
+        <div class="blk" id="blk-palette" data-modes="dither ascii">
           <button class="sec">Palette</button>
           <div class="blkbody">
-            <div class="seg" id="colormode">
-              <button data-cm="mono" aria-pressed="true">Mono</button>
-              <button data-cm="color" aria-pressed="false">Colour</button>
-            </div>
             <div class="swrow" id="palquick"></div>
             <select id="palette" aria-label="All palettes"></select>
             <div class="sld" id="wrap-levels"><span class="lab">Levels <b data-out="levels">2</b></span>
               <input type="range" id="levels" min="2" max="16" value="2"></div>
-            <div class="sld"><span class="lab">Depth <b data-out="depth">0</b></span>
+            <div class="sld" data-adv><span class="lab">Depth <b data-out="depth">0</b></span>
               <input type="range" id="depth" min="0" max="32" value="0"></div>
-            <label class="sld" id="wrap-palmap"><span class="lab">Colour mapping</span>
+            <label class="sld" id="wrap-palmap" data-adv><span class="lab">Colour mapping</span>
               <select id="palmap">
                 <option value="rgb">Nearest colour</option>
                 <option value="luma">Tonal scale</option>
               </select></label>
-            <label class="sld" id="wrap-rampcurve"><span class="lab">Tone curve</span>
+            <label class="sld" id="wrap-rampcurve" data-adv><span class="lab">Tone curve</span>
               <select id="rampcurve">
                 <option value="linear">Linear</option>
                 <option value="gamma">Gamma (lifted)</option>
                 <option value="scurve">S-curve</option>
                 <option value="film">Film</option>
               </select></label>
-            <label class="sld"><span class="lab">Colour distance</span>
+            <label class="sld" data-adv><span class="lab">Colour distance</span>
               <select id="dist">
                 <option value="fast">Fast (weighted RGB)</option>
                 <option value="perceptual">Perceptual (Oklab)</option>
@@ -767,7 +813,7 @@
           </div>
         </div>
 
-        <div class="blk hidden" id="blk-ramp">
+        <div class="blk offmode" id="blk-ramp" data-modes="ascii">
           <button class="sec">Character ramp</button>
           <div class="blkbody">
             <div class="sld"><span class="lab">Columns <b data-out="acols">110</b></span>
@@ -781,16 +827,17 @@
             <label class="sld hidden" id="wrap-custom"><span class="lab">Custom ramp (dark → light)</span>
               <input type="text" id="custom" value="@%#*+=-:. "></label>
             <label class="line"><span class="ll">Invert ramp</span><input type="checkbox" class="tgl" id="rampinv"></label>
-            <div class="sld" id="wrap-cdepth"><span class="lab">Character depth <b data-out="cdepth">0</b></span>
+            <div class="sld" id="wrap-cdepth" data-adv><span class="lab">Character depth <b data-out="cdepth">0</b></span>
               <input type="range" id="cdepth" min="0" max="32" value="0"></div>
-            <div class="sld" id="wrap-choff"><span class="lab">Character offset <b data-out="choff">0</b></span>
+            <div class="sld" id="wrap-choff" data-adv><span class="lab">Character offset <b data-out="choff">0</b></span>
               <input type="range" id="choff" min="-100" max="100" value="0"></div>
             <div class="note" id="rampwarn" style="color:var(--accent); display:none"></div>
-            <div class="note">Braille packs a 2×4 dither grid into every character — highest detail per cell, and it copies as text. <b>Depth</b> uses only the first N glyphs of the ramp (0 = all of them); <b>offset</b> slides the whole luminance-to-glyph mapping.</div>
+            <div class="note">Braille packs a 2×4 dither grid into every character — highest detail per cell, and it copies as text.</div>
+            <div class="note" data-adv><b>Depth</b> uses only the first N glyphs of the ramp (0 = all of them); <b>offset</b> slides the whole luminance-to-glyph mapping.</div>
           </div>
         </div>
 
-        <div class="blk hidden" id="blk-type">
+        <div class="blk offmode" id="blk-type" data-modes="ascii">
           <button class="sec">Type &amp; ink</button>
           <div class="blkbody">
             <div class="sld"><span class="lab">Font size (px) <b data-out="fsize">12</b></span>
@@ -897,6 +944,7 @@
       <div class="seg" id="mode">
         <button data-mode="dither" aria-pressed="true">Dither</button>
         <button data-mode="ascii" aria-pressed="false">ASCII</button>
+        <button data-mode="image" aria-pressed="false">Image</button>
       </div>
       <div class="grow"></div>
       <button class="linkish" id="compare" aria-pressed="false">before ⇄ after</button>
@@ -936,6 +984,7 @@
       <div class="seg" id="dockmode">
         <button data-mode="dither" aria-pressed="true">Dither</button>
         <button data-mode="ascii" aria-pressed="false">ASCII</button>
+        <button data-mode="image" aria-pressed="false">Image</button>
       </div>
       <div class="div"></div>
       <button class="dockbtn" id="dockcompare" title="Compare with source">◐</button>
@@ -1578,6 +1627,15 @@ const LOOKS = {
   ledgerbar:{n:"Ledger bars", g:"ASCII", d:"eighth blocks",            cfg:{charset:'ledger', acols:'160', algo:'ord:bayer8', fsize:'11', lh:'1'}, cm:'mono', mode:'ascii'},
   runic:    {n:"Runic",       g:"ASCII", d:"carved",                   cfg:{charset:'runes', acols:'100', algo:'ed:atkinson', afg:'#d8c9a3', abg:'#141210'}, cm:'mono', mode:'ascii'},
   numprint: {n:"Numeric",     g:"ASCII", d:"printout",                 cfg:{charset:'numeric', acols:'140', algo:'ord:bayer4', afg:'#c9d1c9', abg:'#101410'}, cm:'mono', mode:'ascii'},
+
+  // Image mode: tone and effects with nothing quantized behind them. These are
+  // the only looks whose picture the palette and algorithm blocks cannot touch.
+  clean:    {n:"Clean up",    g:"Image (no dither)", d:"contrast & sharpen",  cfg:{imgres:'src', imgpx:'1', contrast:'14', fxsharp:'22'}, cm:'color', mode:'image'},
+  lofi:     {n:"Lo-fi camera",g:"Image (no dither)", d:"grain, glow, vignette",cfg:{imgres:'1440', imgpx:'1', contrast:'10', sat:'115', noise:'14', fxbloom:'30', fxchroma:'18', fxvig:'45'}, cm:'color', mode:'image'},
+  bwfilm:   {n:"B&W film",    g:"Image (no dither)", d:"pushed and grainy",   cfg:{imgres:'2048', imgpx:'1', contrast:'30', gamma:'1.1', noise:'20', fxvig:'30'}, cm:'mono', mode:'image'},
+  pixelate: {n:"Pixelate",    g:"Image (no dither)", d:"blocks, full colour", cfg:{imgres:'1080', imgpx:'8'}, cm:'color', mode:'image'},
+  sorted:   {n:"Sorted",      g:"Image (no dither)", d:"pixel sort & tear",   cfg:{imgres:'1080', imgpx:'2', contrast:'18', fxsort:'55', fxslice:'22'}, cm:'color', mode:'image'},
+  cine:     {n:"Cinematic",   g:"Image (no dither)", d:"soft, bloomed, wide", cfg:{imgres:'2048', imgpx:'1', contrast:'18', gamma:'1.08', sat:'92', fxbloom:'38', fxvig:'38', fxscan:'8'}, cm:'color', mode:'image'},
 };
 
 /* ---------- state ---------- */
@@ -1588,6 +1646,9 @@ const samp = document.createElement('canvas'), sctx = samp.getContext('2d', {wil
 const thumb = document.createElement('canvas'), tctx = thumb.getContext('2d', {willReadFrequently:true});
 const out = $('#out'), octx = out.getContext('2d');
 let mode = 'dither', colormode = 'mono';
+// Browsers silently hand back a blank canvas past their per-side limit rather
+// than throwing, so every render path walks its scale down to stay inside this.
+const CANVAS_LIMIT = 8192;
 let lastText = '';
 let compareOn = false;
 let expFormat = 'png';
@@ -1995,7 +2056,7 @@ function effects(d, w, h){
     row.innerHTML =
       `<div class="sld"><span class="lab"><span></span> <b data-out="${F.ctrl}">0</b></span>` +
       `<input type="range" id="${F.ctrl}" min="0" max="${F.max||100}" value="0"></div>` +
-      `<div class="fxmove">` +
+      `<div class="fxmove" data-adv>` +
         `<button class="fxup" data-nobind aria-label="Move ${F.n} earlier">▲</button>` +
         `<button class="fxdn" data-nobind aria-label="Move ${F.n} later">▼</button>` +
       `</div>`;
@@ -2239,6 +2300,7 @@ const SIZE_PRESETS = [
 // the output size at 1×, before any export multiplier
 function baseOutSize(){
   if(mode==='ascii') return {w:out.width/Math.max(1,lastScale), h:out.height/Math.max(1,lastScale)};
+  if(mode==='image'){ const g=imageGrid(); return {w:g.cols*g.px, h:g.rows*g.px}; }
   const cols = Math.round(num('cols'));
   const rows = Math.max(1, Math.round(cols * (img ? img.height/img.width : 0.75)));
   const cell = Math.round(num('cell'));
@@ -2289,14 +2351,65 @@ function renderDither(){
   lastGrid = {cols, rows, cell:Math.round(num('cell')), data:new Uint8ClampedArray(d.data)};
   lastLines = null; lastColors = null;
   let cell = Math.round(num('cell')) * exportScale();
-  const LIMIT = 8192;
-  while(cell>1 && (cols*cell>LIMIT || rows*cell>LIMIT)) cell--;
+  while(cell>1 && (cols*cell>CANVAS_LIMIT || rows*cell>CANVAS_LIMIT)) cell--;
   out.width = cols*cell; out.height = rows*cell;
   octx.imageSmoothingEnabled = false;
   octx.clearRect(0,0,out.width,out.height);
   octx.drawImage(work,0,0,out.width,out.height);
   setStatus(`${cols} × ${rows} cells`, pal.length);
   lastText = '';
+}
+
+/* ---------- render: image ----------
+   The same pipeline with the last stage taken off: downscale, adjust(),
+   effects(), and then straight to the canvas with nothing quantized. There is
+   no palette and no glyph grid, so this mode produces continuous tone.
+
+   Grid and cell stay decoupled the way they are everywhere else, but they are
+   expressed differently here because there are no cells to speak of: the
+   *working size* is a ceiling on the long edge, and *pixel size* divides that
+   into blocks. Every pass is per-pixel, so pixel size is also the cost lever —
+   at 8 there are 64× fewer pixels to sort, blur and screen. */
+function imageWorkSize(){
+  const sw = Math.max(1, img ? img.width : 600), sh = Math.max(1, img ? img.height : 400);
+  const cap = v('imgres');
+  if(cap==='src') return {w:sw, h:sh};
+  const t = Math.min(Number(cap) || 0, CANVAS_LIMIT), long = Math.max(sw, sh);
+  if(!t || long <= t) return {w:sw, h:sh};   // a ceiling, never an upscale
+  const k = t/long;
+  return {w:Math.max(1,Math.round(sw*k)), h:Math.max(1,Math.round(sh*k))};
+}
+// working size in whole blocks, which is what the passes actually run over
+function imageGrid(){
+  const px = Math.max(1, Math.round(num('imgpx'))), b = imageWorkSize();
+  return {px, cols:Math.max(1,Math.round(b.w/px)), rows:Math.max(1,Math.round(b.h/px))};
+}
+function renderImage(){
+  const g = imageGrid();
+  const px = g.px;
+  let cols = g.cols, rows = g.rows;
+  // same drag throttle as the dither path: a settled render lands on release
+  const cap = previewCols();
+  if(cols > cap){ rows = Math.max(1, Math.round(rows * cap/cols)); cols = cap; }
+  work.width=cols; work.height=rows;
+  wctx.imageSmoothingEnabled = true;
+  wctx.imageSmoothingQuality = 'high';
+  wctx.clearRect(0,0,cols,rows);
+  wctx.drawImage(img,0,0,cols,rows);
+  const d = wctx.getImageData(0,0,cols,rows);
+  adjust(d);
+  effects(d, cols, rows);
+  wctx.putImageData(d,0,0);
+  // nothing was quantized, so there is no palette grid and no glyph grid — the
+  // vector and text exporters have nothing to build a run out of
+  lastGrid = null; lastLines = null; lastColors = null; lastText = '';
+  let cell = px * exportScale();
+  while(cell>1 && (cols*cell>CANVAS_LIMIT || rows*cell>CANVAS_LIMIT)) cell--;
+  out.width = cols*cell; out.height = rows*cell;
+  octx.imageSmoothingEnabled = false;   // blocks stay square, same as everywhere else
+  octx.clearRect(0,0,out.width,out.height);
+  octx.drawImage(work,0,0,out.width,out.height);
+  setStatus(`${cols*px} × ${rows*px} px`, 0);
 }
 
 /* ---------- render: ascii ---------- */
@@ -2411,8 +2524,7 @@ function renderAscii(){
   out.width = Math.ceil(cols*cw)+pad*2;
   out.height = Math.ceil(rows*chh)+pad*2;
   let scale = exportScale();
-  const LIMIT = 8192;
-  while(scale>1 && (out.width*scale>LIMIT || out.height*scale>LIMIT)) scale--;
+  while(scale>1 && (out.width*scale>CANVAS_LIMIT || out.height*scale>CANVAS_LIMIT)) scale--;
   if(scale>1){ out.width*=scale; out.height*=scale; }
   lastScale = scale;
   octx.setTransform(scale,0,0,scale,0,0);
@@ -2448,9 +2560,14 @@ function renderAscii(){
 /* ---------- status bar ---------- */
 function setStatus(cells, n){
   $('#st-cells').textContent = cells;
-  $('#st-algo').textContent = algoName(v('algo')).toLowerCase();
-  $('#st-colors').textContent = mode==='ascii'
-    ? `${n} levels`
+  // naming an algorithm in a mode that never runs one is worse than saying
+  // nothing, so image mode reports what it actually did instead
+  if(mode==='image'){
+    const on = fxOrder().filter(k=>num(FX[k].ctrl)).length;
+    $('#st-algo').textContent = on ? `${on} effect pass${on===1?'':'es'}` : 'tone only';
+  } else $('#st-algo').textContent = algoName(v('algo')).toLowerCase();
+  $('#st-colors').textContent = mode==='ascii' ? `${n} levels`
+    : mode==='image' ? 'continuous tone'
     : `${n} colour${n===1?'':'s'}`;
 }
 
@@ -2519,7 +2636,7 @@ function render(){
   if(!img){ setStatus('—', 0); $('#st-time').textContent='—'; return; }
   if(compareOn){ drawCompare(); return; }
   const t0 = performance.now();
-  try{ mode==='dither' ? renderDither() : renderAscii(); }
+  try{ mode==='dither' ? renderDither() : mode==='ascii' ? renderAscii() : renderImage(); }
   catch(err){ console.error(err); toast('Render failed — see console'); }
   lastCost = performance.now()-t0;
   const preview = previewCols() !== Infinity;
@@ -2549,9 +2666,13 @@ function schedule(){
   if(dragging){ dragging=false; schedule(); }
 }));
 function updateVisibility(){
-  const isAscii = mode==='ascii';
-  $('#blk-ramp').classList.toggle('hidden', !isAscii);
-  $('#blk-type').classList.toggle('hidden', !isAscii);
+  const isAscii = mode==='ascii', isImage = mode==='image';
+  // Mode gating is declared on the block, not scattered through here: a block
+  // lists the modes it belongs to and anything untagged is universal. It is a
+  // separate class from .hidden so a block can be gated by its mode *and* by
+  // its own condition at the same time — the halftone screen is both.
+  $$('#rail .blk[data-modes]').forEach(b=>
+    b.classList.toggle('offmode', !b.dataset.modes.split(' ').includes(mode)));
   $('#sec-dither').textContent = isAscii ? 'Ramp dither' : 'Dither';
   $('#wrap-cols').classList.toggle('hidden', isAscii);
   $('#wrap-cell').classList.toggle('hidden', isAscii);
@@ -2597,8 +2718,27 @@ function updateVisibility(){
     v('sizemode')==='multiplier' && b.dataset.s===String(Math.round(num('oscale')))));
   markFontSel();
   $('#blk-video').classList.toggle('hidden', !isVideo);
+  if(isImage){
+    const g = imageGrid();
+    $('#imginfo').textContent = `${g.cols*g.px} × ${g.rows*g.px} px · passes run at ${g.cols} × ${g.rows}`;
+  }
+  $('#uilevel .dot').classList.toggle('on', advDirty());
   $('#compare').setAttribute('aria-pressed', String(compareOn));
   $('#dockcompare').setAttribute('aria-pressed', String(compareOn));
+}
+/* Basic hides advanced controls without changing a single value, which means a
+   preset can leave one somewhere surprising and invisible. Rather than let that
+   happen quietly, mark the button that would reveal it. Controls in a block the
+   current mode does not use don't count — they aren't hiding anything you'd act on. */
+function advDirty(){
+  return $$('#rail [data-adv]').some(w=>{
+    const blk = w.closest('.blk');
+    if(blk && (blk.classList.contains('offmode') || blk.classList.contains('hidden'))) return false;
+    return Array.from(w.querySelectorAll('input, select')).some(e=>{
+      if(!e.id || !(e.id in DEFAULTS)) return false;
+      return String(e.type==='checkbox' ? e.checked : e.value) !== String(DEFAULTS[e.id]);
+    });
+  });
 }
 
 /* ---------- compare with source ---------- */
@@ -2624,7 +2764,8 @@ const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell
   'htshape','htangle','htfreq','htink','htgain','cmyk','ucr',
   'fxorder','fxchroma','fxjpeg','fxwave','fxsort','fxslice','fxvig','fxseed',
   'tvar','tvamt','choff','cdepth',
-  'sizemode','targetpx','sizepreset'];
+  'sizemode','targetpx','sizepreset',
+  'imgres','imgpx'];
 // A control listed here without a matching element used to throw on boot. It is
 // the single easiest mistake to make in this file, so both directions skip
 // quietly instead — an id that has not landed yet simply does not round-trip.
@@ -2655,7 +2796,9 @@ function pushHistory(immediate){
   clearTimeout(histTimer);
   const commit = ()=>{
     const cfg = readCfg();
-    const label = `${cfg.mode} · ${algoName(cfg.algo)}`;
+    const label = cfg.mode==='image'
+      ? `image · ${cfg.imgres==='src' ? 'source' : cfg.imgres+'px'}${Number(cfg.imgpx)>1 ? ` · ${cfg.imgpx}px blocks` : ''}`
+      : `${cfg.mode} · ${algoName(cfg.algo)}`;
     const prev = history[0];
     if(prev && JSON.stringify(prev.cfg)===JSON.stringify(cfg)) return;
     history.unshift({cfg, label, t:new Date()});
@@ -2754,7 +2897,10 @@ function randomize(){
     $('#palette').value = pick(Object.keys(PALETTES).filter(k=>!PALETTES[k].extracted));
     colormode = Math.random()<0.5 ? 'mono' : 'color';
   }
-  if(!locked('lockscale')) setScale(pick(mode==='ascii' ? ASCII_STOPS : GRID_STOPS));
+  if(!locked('lockscale')){
+    if(mode==='image') $('#imgpx').value = pick([1,1,1,2,3,4,6,8]);
+    else setScale(pick(mode==='ascii' ? ASCII_STOPS : GRID_STOPS));
+  }
   if(mode==='ascii') $('#charset').value = pick(Object.keys(CHARSETS).filter(k=>!CHARSETS[k].custom));
   $('#contrast').value = Math.round(Math.random()*80-20);
   $('#gamma').value = (0.6+Math.random()*1.2).toFixed(2);
@@ -3155,6 +3301,16 @@ $$('#rail input:not([data-nobind]), #rail select, #expcard input').forEach(el=>{
 });
 $$('.blk > button.sec').forEach(h=>h.addEventListener('click',()=>h.parentElement.classList.toggle('closed')));
 $$('.tabs button').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+/* The disclosure level is a property of the panel, not of the picture, so it is
+   deliberately not in CFG_IDS: loading a preset or stepping through history must
+   never move it. Hiding a control never changes its value either — Basic and All
+   render identically. */
+$$('#uilevel button').forEach(b=>b.addEventListener('click',()=>setUiLevel(b.dataset.lvl)));
+function setUiLevel(lvl){
+  document.body.classList.toggle('basic', lvl!=='all');
+  $$('#uilevel button').forEach(x=>x.setAttribute('aria-pressed', String(x.dataset.lvl===lvl)));
+  updateVisibility();
+}
 function showTab(name){
   $$('.tabs button').forEach(x=>x.setAttribute('aria-selected', String(x.dataset.tab===name)));
   $$('.pane').forEach(p=>p.classList.toggle('hidden', p.dataset.pane!==name));
@@ -3442,8 +3598,10 @@ async function eachFrame(fn){
 async function exportGif(){
   const fps=Math.round(num('vfps'));
   showProgress(true,'Preparing…');
-  // one shared colour table for the whole clip, taken from the active palette
-  const pal=currentPalette().slice(0,256);
+  // One shared colour table for the whole clip. Dithered output is already
+  // quantized, so the active palette *is* the table; image mode is continuous
+  // tone, so it needs one extracted from the source instead.
+  const pal=(mode==='image' ? (extractPalette(64)||currentPalette()) : currentPalette()).slice(0,256);
   let enc=null;
   const r = await eachFrame(async ()=>{
     const w=out.width, h=out.height;
@@ -3589,6 +3747,11 @@ $('#copytxtbtn').addEventListener('click', copyTxt);
 
 /* export dialog */
 const ANIM_FMTS = ['gif','webm','zip'];
+/* SVG merges runs out of the dither grid or the glyph grid; TXT and HTML need
+   the glyph grid. Image mode quantizes nothing, so it has neither and offering
+   those formats there would only ever produce an empty file. */
+const FMT_MODES = {svg:['dither','ascii'], txt:['ascii'], html:['ascii']};
+const fmtOk = f => !FMT_MODES[f] || FMT_MODES[f].includes(mode);
 function saveText(text, ext, mime){
   if(!text) return toast('Nothing to export yet');
   download(new Blob([text],{type:mime}), `${imgName}.${ext}`);
@@ -3601,8 +3764,9 @@ async function copyText(text, label){
 }
 function openExport(){
   if(!img) return toast('Load an image first');
-  if(mode!=='ascii' && expFormat==='txt') expFormat='png';
+  if(!fmtOk(expFormat)) expFormat='png';
   if(!isVideo && ANIM_FMTS.includes(expFormat)) expFormat='png';
+  $$('#fmt button').forEach(b=>b.classList.toggle('hidden', !fmtOk(b.dataset.fmt)));
   if(expFormat==='batch' && batchFiles.length<2) expFormat='png';
   $('#fmtanim').classList.toggle('hidden', !isVideo);
   $('#fmt-anim-lab').classList.toggle('hidden', !isVideo);
@@ -3650,8 +3814,11 @@ function updateExportSummary(){
     dims.textContent = `${frames} frames @ ${fps}fps · ${out.width} × ${out.height}`;
   } else {
     name.textContent = `${imgName}-${mode}${suffix}.png`;
-    // PNG of flat dithered colour compresses hard; ~0.35 bytes/px is a fair guess
-    let line = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
+    // PNG of flat dithered colour compresses hard; ~0.35 bytes/px is a fair
+    // guess. Continuous tone does not, so image mode gets its own guess. Both
+    // are hints, not encodes.
+    const perPx = mode==='image' ? 1.5 : 0.35;
+    let line = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*perPx/1024)}`;
     // say plainly what a target size actually produced — the scale is always a
     // whole number, so the result usually sits inside the target rather than on it
     const sm = v('sizemode');
@@ -3729,6 +3896,7 @@ function buildCommands(){
   const c = [];
   c.push({k:'mode', n:'Dither mode', h:'D', run:()=>{ mode='dither'; compareOn=false; schedule(); }});
   c.push({k:'mode', n:'ASCII mode', h:'A', run:()=>{ mode='ascii'; compareOn=false; schedule(); }});
+  c.push({k:'mode', n:'Image mode — effects only, no dithering', h:'I', run:()=>{ mode='image'; compareOn=false; schedule(); }});
   c.push({k:'source', n:'Browse for an image…', run:browse});
   c.push({k:'source', n:'Load test card', run:loadTestCard});
   c.push({k:'source', n:'Clear image', run:()=>$('#clear').click()});
@@ -3762,6 +3930,8 @@ function buildCommands(){
   c.push({k:'panel', n:'Show Presets tab', run:()=>showTab('presets')});
   c.push({k:'panel', n:'Show History tab', run:()=>showTab('history')});
   c.push({k:'panel', n:'Reset all controls', run:resetAll});
+  c.push({k:'panel', n:'Show all controls', run:()=>setUiLevel('all')});
+  c.push({k:'panel', n:'Show basic controls only', run:()=>setUiLevel('basic')});
   c.push({k:'edit', n:'Shuffle adjustment sliders', run:shuffleAdjustments});
   c.push({k:'dither', n:'Reset effect order', run:()=>$('#fxreset').click()});
   c.push({k:'dither', n:'Toggle CMYK separation', run:()=>{
@@ -3841,6 +4011,7 @@ document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')) return;
   if(e.key==='d'){ mode='dither'; compareOn=false; schedule(); }
   if(e.key==='a'){ mode='ascii'; compareOn=false; schedule(); }
+  if(e.key==='i'){ mode='image'; compareOn=false; schedule(); }
   if(e.key==='s'){ savePng(); }
   if(e.key==='e'){ openExport(); }
   if(e.key==='f'){ setFocus(!document.body.classList.contains('focus')); }

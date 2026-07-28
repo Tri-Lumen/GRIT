@@ -58,6 +58,31 @@ build lastText for the copy/save buttons
 Rows are computed from the glyph aspect ratio, so output proportions hold across
 fonts and line-height settings.
 
+## Image pipeline
+
+The same pipeline with the last stage taken off — tone and effects, nothing
+quantized.
+
+```
+working size = min(source long edge, #imgres ceiling)     never an upscale
+cols = round(workW / px), rows = round(workH / px)        px = #imgpx
+
+work at (cols × rows) → adjust → effects → putImageData   smoothing ON
+drawImage(work → out) at px × oscale                      smoothing OFF
+```
+
+Grid and cell stay decoupled the way they are in the other two modes, but the
+two knobs are named for what they mean here: the **working size** is a ceiling
+on the long edge, and the **pixel size** divides it into blocks. Because every
+effect pass is per-pixel, pixel size is also the cost lever — at 8 there are 64×
+fewer pixels to blur, sort and screen. At 1 the passes run at the working size
+and the output is continuous tone.
+
+`renderImage()` clears `lastGrid`, `lastLines`, `lastColors` and `lastText`,
+because none of them exist here: there is no palette grid for `svgDither()` to
+merge runs out of and no glyph grid for the text and HTML exporters. `FMT_MODES`
+in the export dialog is what stops those formats being offered.
+
 ## `ditherPixels(d, w, h, pal, algoKey, opts)`
 
 `algoKey` is `"ed:<name>"` or `"ord:<name>"`.
@@ -96,6 +121,26 @@ not k-means and won't match a proper quantizer on hard images.
 Every input inside `#rail` calls `schedule()`, which coalesces to one `render()`
 per animation frame. `render()` calls `syncOuts()` and `updateVisibility()`
 before doing any work, so the UI stays consistent even with no image loaded.
+
+## Panel visibility
+
+Two independent mechanisms, both separate from `.hidden` so they can stack on
+one element:
+
+| Mechanism | Set by | Means |
+|---|---|---|
+| `.offmode` on a `.blk` | `updateVisibility()`, from the block's own `data-modes` | this block does not belong to the current mode |
+| `[data-adv]` on any wrapper | CSS, from `body.basic` | advanced control, shown only at the **All** disclosure level |
+
+A block with no `data-modes` is universal. `#blk-halftone` carries both a mode
+gate and its own `.hidden` condition (`algo === 'ord:screen'`), which is why the
+two classes are kept apart.
+
+Neither mechanism touches a value, so Basic and All render identically and a
+mode switch never edits a setting. The cost is that a preset can leave an
+advanced control somewhere surprising and invisible; `advDirty()` catches that
+and marks the **All** button when a *currently relevant* advanced control sits
+away from its default.
 
 ## Headless test harness
 

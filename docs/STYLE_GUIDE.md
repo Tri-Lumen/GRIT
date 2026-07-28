@@ -148,6 +148,23 @@ not a general divider — hairlines are. Adding a second one dilutes it.
 6. Anything in `#rail` is auto-bound to `schedule()`. To opt out (search fields, filters),
    mark it `data-nobind`.
 7. If it deserves a keyboard route, add it to `buildCommands()` for ⌘K.
+8. Decide its **disclosure level**. A control the everyday path needs stays plain;
+   one that is a refinement of another control gets `data-adv` on its wrapper, and
+   it then only appears at **All**. Put `data-adv` on the wrapper (`.sld`, `.line`,
+   `.chips`), never on the `<input>` itself — the label has to go with it.
+9. Decide its **mode**. Controls live in a `.blk`, and the block declares the modes
+   it belongs to with `data-modes="dither ascii"`. A block with no `data-modes` is
+   universal. Never hand-roll a per-mode toggle in `updateVisibility()` again — the
+   table is the whole point.
+
+### Disclosure rules
+
+- Hiding must never change the picture. Basic and All render identically, always.
+- Never put the *only* way to do something behind **All**. Advanced means "a
+  refinement of a control that is already visible", not "a feature you can't reach".
+- Notes explaining an advanced-only control carry `data-adv` too, or Basic is left
+  with prose about a slider that isn't there.
+- Basic is the default. That is a decision about who the tool is for, not a hedge.
 
 ---
 
@@ -173,7 +190,10 @@ Things the comps show that GRIT does not implement, and why:
 
 - **Camera source chip** — no webcam capture; the slot is used for *Test card* instead,
   which is the zero-state feature GRIT actually has.
-- **Hybrid mode** — GRIT has Dither and ASCII; there is no third pipeline.
+- **Hybrid mode** — the comp's third mode was a dither/ASCII blend, which GRIT
+  still does not do. The **Image** mode tab that now sits beside Dither and ASCII is
+  a different thing: the shared pipeline with the quantizer removed, so tone and the
+  twelve effect passes can be used on a continuous-tone image.
 - **Animation formats** are a second, separately-labelled row under the comp's 4-up
   FORMAT grid, shown only when the source is a clip. The comps predate clip support.
   During an encode the dialog stays up and the scale/clipboard rows are swapped for

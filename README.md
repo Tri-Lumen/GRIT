@@ -1,7 +1,7 @@
 # GRIT
 
-Browser-based image dithering and ASCII art. One HTML file, no dependencies, no
-network, no install. Everything runs locally in the browser.
+Browser-based image dithering, ASCII art and effects. One HTML file, no
+dependencies, no network, no install. Everything runs locally in the browser.
 
 ## Get it
 
@@ -76,6 +76,21 @@ generate one.
 - Warns when the chosen font has no glyph for the chosen set — a substituted
   glyph is a different width and shears the grid
 
+## Image mode
+
+The same pipeline with the dithering taken off — tone and every effect pass
+against a continuous-tone image, no palette and no glyphs.
+
+- **All twelve effect passes**, in any order, with nothing quantized behind them
+- **Working size** caps the long edge — source resolution, or 2048 / 1440 / 1080
+  / 720 / 480px. It is a ceiling, not a target: a smaller image is left alone
+  rather than blown up
+- **Pixel size** divides the working size into blocks and prints them back
+  nearest-neighbour, so it both pixelates and controls what the effects cost —
+  every pass is per-pixel, so at 8 there are 64× fewer of them
+- Exports as PNG, or as GIF / WebM / a PNG sequence from a clip. SVG and text
+  aren't offered here — there is no grid of flat colours or glyphs to build them from
+
 ## Clips
 
 Drop in a video and every frame runs the full pipeline.
@@ -101,10 +116,15 @@ relative to each source, not in pixels.
 ## Interface
 
 - **Workbench** — a left control rail with Adjust / Presets / History tabs
+- **Basic or All** — the panel shows the everyday controls by default and reveals
+  the refinements on request. It only ever hides controls, never changes them, so
+  both levels render exactly the same picture. Each block also only appears in the
+  modes it applies to, so switching to Image puts the algorithm, dither and palette
+  controls away
 - **Focus mode** — the rail detaches into a floating panel over a full-bleed
   canvas, with a dock at the bottom
-- **41 presets** grouped by use — print and repro, console and retro, screen,
-  photographic, glitch, ASCII — each applied over the defaults, so the same look
+- **47 presets** grouped by use — print and repro, console and retro, screen,
+  photographic, glitch, ASCII, image — each applied over the defaults, so the same look
   always gives the same picture. Save your own into a shareable pack
 - **⌘K command palette** — 250-odd entries: every algorithm, palette, ramp,
   font, scale, export size and action
@@ -141,6 +161,7 @@ written to browser storage.
 | `⌘K` / `Ctrl+K` | Command palette |
 | `d` | Dither mode |
 | `a` | ASCII mode |
+| `i` | Image mode |
 | `e` | Export dialog |
 | `s` | Save PNG |
 | `f` | Focus mode |

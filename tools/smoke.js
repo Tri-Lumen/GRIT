@@ -343,6 +343,125 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   if (perf.preview.w >= perf.settled.w) fail('preview render was not smaller than the settled one');
   console.log(`  drag preview renders at ${perf.preview.w}px vs ${perf.settled.w}px settled, and settles identically`);
 
+  // 6j. image mode: the same pipeline with the quantizer taken off. It has to
+  //     run every effect pass, keep continuous tone, treat the working size as
+  //     a ceiling rather than a target, and leave nothing behind for the vector
+  //     and text exporters to build a stale file out of.
+  await page.click('#mode button[data-mode="image"]');
+  await page.waitForTimeout(150);
+  const imageMode = await page.evaluate(() => {
+    const sig = () => {
+      render();
+      const w = Math.min(out.width, 400), h = Math.min(out.height, 300);
+      const g = out.getContext('2d').getImageData(0, 0, w, h).data;
+      let s = 0; const u = new Set();
+      for (let i = 0; i < g.length; i += 4) {
+        s = (s * 31 + g[i] * 7 + g[i + 1] * 13 + g[i + 2] * 3) >>> 0;   // position-sensitive, same as everywhere else here
+        u.add(g[i] + ',' + g[i + 1] + ',' + g[i + 2]);
+      }
+      return { s, uniq: u.size, w: out.width, h: out.height };
+    };
+    const set = o => { for (const id in o) document.querySelector('#' + id).value = o[id]; };
+    // DEFAULTS is mode:dither, colormode:mono — mono caps the output at 256
+    // greys, which is adjust() doing its job, not the quantizer sneaking back in
+    const reset = () => { applyCfg(DEFAULTS); mode = 'image'; colormode = 'color'; };
+
+    reset();
+    // the test card is 800x600: a 2048 ceiling must leave it alone, 480 shrinks it
+    set({ imgres: 'src', imgpx: '1' });  const src = sig();
+    set({ imgres: '2048' });             const ceil = sig();
+    set({ imgres: '480' });              const small = sig();
+    set({ imgres: 'src', imgpx: '8' });  const blocks = sig();
+
+    // nothing wrote a palette grid or a glyph grid, so those exporters stay empty
+    set({ imgpx: '1' }); render();
+    const leftovers = { grid: !!lastGrid, text: !!lastText, svg: !!buildSvg(), html: !!buildHtml() };
+    const fmts = ['png', 'svg', 'txt', 'html'].filter(f => fmtOk(f));
+
+    reset();
+    const base = sig().s;
+    const dead = [];
+    for (const k of Object.keys(FX)) {
+      reset();
+      const c = document.querySelector('#' + FX[k].ctrl);
+      c.value = c.max;                  // full strength, so the pass has to show
+      if (sig().s === base) dead.push(k);
+    }
+    reset(); render();
+    return { src, ceil, small, blocks, leftovers, fmts, dead,
+             colors: document.querySelector('#st-colors').textContent };
+  });
+  if (imageMode.src.w !== 800 || imageMode.src.h !== 600)
+    fail(`image mode at source size gave ${imageMode.src.w}x${imageMode.src.h}, expected 800x600`);
+  if (imageMode.ceil.w !== 800)
+    fail(`a 2048px working size upscaled an 800px source to ${imageMode.ceil.w}px — it is a ceiling, not a target`);
+  if (imageMode.small.w !== 480)
+    fail(`a 480px working size gave ${imageMode.small.w}px`);
+  if (imageMode.blocks.w !== 800)
+    fail(`pixel size 8 changed the output size to ${imageMode.blocks.w}px`);
+  if (imageMode.blocks.uniq >= imageMode.src.uniq)
+    fail(`pixel size 8 did not reduce detail (${imageMode.blocks.uniq} vs ${imageMode.src.uniq} colours)`);
+  if (imageMode.src.uniq < 500)
+    fail(`image mode produced only ${imageMode.src.uniq} distinct colours — something is still quantizing`);
+  if (imageMode.leftovers.grid || imageMode.leftovers.text)
+    fail('image mode left a stale dither grid or glyph grid behind');
+  if (imageMode.leftovers.svg || imageMode.leftovers.html)
+    fail('image mode built vector/markup output out of nothing');
+  if (imageMode.fmts.join(',') !== 'png')
+    fail('image mode offers export formats it cannot fill: ' + imageMode.fmts.join(','));
+  if (imageMode.dead.length)
+    fail('effect passes that did nothing in image mode: ' + imageMode.dead.join(', '));
+  if (!/continuous/.test(imageMode.colors))
+    fail(`image mode status bar said "${imageMode.colors}"`);
+  console.log(`  image mode: ${imageMode.src.uniq} colours undithered, all ${passes.length} passes apply, exporters stay empty`);
+
+  // 6k. the panel itself. Mode gating is declared on the block rather than
+  //     scattered through updateVisibility, and the disclosure level hides
+  //     controls without touching a single value.
+  const panel = await page.evaluate(() => {
+    showTab('adjust');            // 6g left the Presets tab up; the rail controls live here
+    const sig = () => {
+      render();
+      const g = out.getContext('2d').getImageData(0, 0, 200, 140).data;
+      let s = 0; for (let i = 0; i < g.length; i += 4) s = (s * 31 + g[i] * 7 + g[i + 1] * 13 + g[i + 2] * 3) >>> 0;
+      return s;
+    };
+    const gated = {}, bad = {};
+    for (const m of ['dither', 'ascii', 'image']) {
+      mode = m; updateVisibility();
+      gated[m] = Array.from(document.querySelectorAll('#rail .blk[data-modes]'))
+        .filter(b => !b.classList.contains('offmode')).map(b => b.id);
+      bad[m] = gated[m].filter(id =>
+        !document.querySelector('#' + id).dataset.modes.split(' ').includes(m));
+    }
+    mode = 'dither'; updateVisibility();
+    const vis = () => Array.from(document.querySelectorAll('#rail [data-adv]'))
+      .filter(e => e.offsetParent !== null).length;
+    setUiLevel('all');   const all = sig(),   shown  = vis();
+    setUiLevel('basic'); const basic = sig(), hidden = vis();
+    // an advanced control away from its default must light the reveal button
+    document.querySelector('#bias').value = '40';
+    updateVisibility();
+    const dot = document.querySelector('#uilevel .dot').classList.contains('on');
+    applyCfg(DEFAULTS); updateVisibility();
+    const dotClean = document.querySelector('#uilevel .dot').classList.contains('on');
+    return { gated, bad, all, basic, shown, hidden, dot, dotClean,
+             n: document.querySelectorAll('#rail [data-adv]').length };
+  });
+  for (const m of ['dither', 'ascii', 'image']) {
+    if (!panel.gated[m].length) fail(`no mode-gated block is visible in ${m} mode`);
+    if (panel.bad[m].length) fail(`blocks visible in ${m} that do not list it: ${panel.bad[m].join(', ')}`);
+  }
+  if (panel.gated.image.join(',') !== 'blk-image')
+    fail('image mode still shows dither/ascii blocks: ' + panel.gated.image.join(', '));
+  if (!panel.n) fail('nothing is marked data-adv');
+  if (!panel.shown) fail('the All disclosure level showed no advanced controls');
+  if (panel.hidden) fail(`${panel.hidden} advanced controls are still visible at Basic`);
+  if (panel.all !== panel.basic) fail('the disclosure level changed the rendered output');
+  if (!panel.dot) fail('an off-default advanced control did not mark the reveal button');
+  if (panel.dotClean) fail('the reveal button stayed marked with everything at its default');
+  console.log(`  mode gating covers 3 modes; ${panel.n} advanced controls hide at Basic without changing the picture`);
+
   // 7. config round-trip — the check that actually catches a missing CFG_IDS entry
   const rt = await page.evaluate(() => {
     const before = JSON.stringify(readCfg());
@@ -358,10 +477,10 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   if (shot) {
     await page.evaluate(() => applyLook(LOOKS.newsprint));
     await page.waitForTimeout(300);
-    await page.screenshot({ path: shot-dither.png });
+    await page.screenshot({ path: 'shot-dither.png' });
     await page.evaluate(() => applyLook(LOOKS.matrix));
     await page.waitForTimeout(300);
-    await page.screenshot({ path: shot-ascii.png });
+    await page.screenshot({ path: 'shot-ascii.png' });
   }
 
   await browser.close();
