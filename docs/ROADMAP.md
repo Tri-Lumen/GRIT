@@ -3,6 +3,10 @@
 Nothing here is committed — it's the list of things considered and parked.
 Ordered roughly by value-to-effort.
 
+See `docs/FEATURE_PLAN.md` for the phased plan that mirrors Dither Boy's feature
+set — it supersedes several entries below (effect stack reordering, more
+palettes, batch export) with concrete implementation sketches.
+
 ## Small
 
 - [x] **Before/after toggle.** Shipped as a toggle (`c`, or the toolbar / dock button).
