@@ -192,6 +192,20 @@
   .cell:hover{background:var(--hover)}
   .cell[aria-pressed=true]{background:var(--tint); color:var(--accent); box-shadow:inset 0 0 0 1px var(--ring)}
 
+  /* effect stack: a .sld with reorder arrows beside it. The arrows are 4px-radius
+     chips-in-track sized, per the radius scale, and only tint on hover. */
+  .fxstack{display:flex; flex-direction:column; gap:10px}
+  .fxrow{display:flex; align-items:flex-end; gap:8px}
+  .fxrow > .sld{flex:1; min-width:0}
+  .fxrow.off > .sld > .lab{color:var(--t3)}
+  .fxmove{display:flex; flex-direction:column; gap:2px; padding-bottom:1px}
+  .fxmove button{
+    font:500 8px var(--mono); color:var(--t3); background:var(--fill);
+    border-radius:4px; padding:2px 5px; line-height:1.1;
+  }
+  .fxmove button:hover{background:var(--hover); color:var(--text)}
+  .fxmove button:disabled{opacity:.3}
+
   /* list rows (ramp picker, history, presets) */
   .rows{display:flex; flex-direction:column; gap:5px}
   .row{
@@ -609,19 +623,14 @@
         <div class="blk closed" id="blk-fx">
           <button class="sec">Effects</button>
           <div class="blkbody">
-            <div class="sld"><span class="lab">Blur <b data-out="fxblur">0</b></span>
-              <input type="range" id="fxblur" min="0" max="4" value="0"></div>
-            <div class="sld"><span class="lab">Sharpen <b data-out="fxsharp">0</b></span>
-              <input type="range" id="fxsharp" min="0" max="100" value="0"></div>
-            <div class="sld"><span class="lab">Edge detect <b data-out="fxedge">0</b></span>
-              <input type="range" id="fxedge" min="0" max="100" value="0"></div>
-            <div class="sld"><span class="lab">Posterize <b data-out="fxpost">0</b></span>
-              <input type="range" id="fxpost" min="0" max="16" value="0"></div>
-            <div class="sld"><span class="lab">Bloom <b data-out="fxbloom">0</b></span>
-              <input type="range" id="fxbloom" min="0" max="100" value="0"></div>
-            <div class="sld"><span class="lab">Scanlines <b data-out="fxscan">0</b></span>
-              <input type="range" id="fxscan" min="0" max="100" value="0"></div>
-            <div class="note">Applied to the grid before dithering, in the order listed. 0 disables a pass.</div>
+            <div class="fxstack" id="fxstack"></div>
+            <input type="hidden" id="fxorder" value="">
+            <div class="sld"><span class="lab">Glitch seed <b data-out="fxseed">7</b></span>
+              <input type="range" id="fxseed" min="0" max="999" value="7"></div>
+            <div class="chips" style="margin-top:2px">
+              <button class="chip" id="fxreset" data-nobind>Reset order</button>
+            </div>
+            <div class="note">Applied to the grid before dithering, top to bottom. 0 disables a pass; the arrows reorder them. The seed fixes the random passes so the preview stops reshuffling on every keystroke.</div>
           </div>
         </div>
 
@@ -1685,13 +1694,30 @@ function paintPalQuick(){
   w.appendChild(add);
 }
 
-/* ---------- image adjustments ---------- */
+/* ---------- image adjustments ----------
+   A seeded generator, so grain and the glitch passes stop reshuffling on every
+   render. Without it the preview crawls while you drag an unrelated slider, and
+   a clip's grain flickers frame to frame. `frameSeed` is what temporal
+   variation advances to make it move on purpose instead. */
+function mulberry(seed){
+  let t = (seed>>>0) + 0x6D2B79F5;
+  return function(){
+    t = (t + 0x6D2B79F5)|0;
+    let r = Math.imul(t ^ (t>>>15), 1 | t);
+    r ^= r + Math.imul(r ^ (r>>>7), 61 | r);
+    return ((r ^ (r>>>14)) >>> 0) / 4294967296;
+  };
+}
+let fxSeed = 7;        // set once per render, from #fxseed + frameSeed
+let frameSeed = 0;     // advanced per frame by temporal variation
+
 function adjust(d){
   const bri = num('bright')*2.55;
   const con = num('contrast')/100;
   const k = con>=0 ? 1/(1-Math.min(con,0.99)) : 1+con;
   const gam = num('gamma'), sat = num('sat')/100;
   const grain = num('noise')*1.28, inv = v('invert'), mono = (colormode==='mono');
+  const rnd = mulberry(fxSeed);
   const gl = new Uint8Array(256);
   for(let i=0;i<256;i++) gl[i] = Math.max(0, Math.min(255, Math.round(255*Math.pow(i/255, 1/gam))));
   const a = d.data;
@@ -1700,7 +1726,7 @@ function adjust(d){
     r=(r-128)*k+128+bri; g=(g-128)*k+128+bri; b=(b-128)*k+128+bri;
     if(mono){ const l=0.299*r+0.587*g+0.114*b; r=g=b=l; }
     else if(sat!==1){ const l=0.299*r+0.587*g+0.114*b; r=l+(r-l)*sat; g=l+(g-l)*sat; b=l+(b-l)*sat; }
-    if(grain){ const n=(Math.random()-0.5)*grain; r+=n; g+=n; b+=n; }
+    if(grain){ const n=(rnd()-0.5)*grain; r+=n; g+=n; b+=n; }
     if(inv){ r=255-r; g=255-g; b=255-b; }
     a[i]=r<0?0:r>255?255:r; a[i+1]=g<0?0:g>255?255:g; a[i+2]=b<0?0:b>255?255:b;
   }
@@ -1723,20 +1749,21 @@ function convolve(d, w, h, k, div, bias){
     a[o]=sr/div+bias; a[o+1]=sg/div+bias; a[o+2]=sb/div+bias;
   }
 }
-function effects(d, w, h){
-  const blur=Math.round(num('fxblur')), sharp=num('fxsharp')/100, edge=num('fxedge')/100;
-  const post=Math.round(num('fxpost')), bloom=num('fxbloom')/100, scan=num('fxscan')/100;
-  const a=d.data;
-  for(let i=0;i<blur;i++) convolve(d,w,h,[1,2,1,2,4,2,1,2,1],16,0);
-  if(sharp>0){
-    const c=1+4*sharp, s=-sharp;
-    convolve(d,w,h,[0,s,0, s,c, s, 0,s,0],1,0);
-  }
-  if(edge>0){
-    const src=new Uint8ClampedArray(a);
+/* Every pass, in one table. `run` gets the amount already normalised the way
+   that pass wants it. Order is not a property of any single pass, so it lives
+   in #fxorder — see fxOrder(). */
+const FX = {
+  blur:  {n:"Blur",     ctrl:'fxblur',   max:4,  norm:v=>Math.round(v), run:(d,w,h,n)=>{
+    for(let i=0;i<n;i++) convolve(d,w,h,[1,2,1,2,4,2,1,2,1],16,0);
+  }},
+  sharp: {n:"Sharpen",  ctrl:'fxsharp',  norm:v=>v/100, run:(d,w,h,s)=>{
+    convolve(d,w,h,[0,-s,0, -s,1+4*s, -s, 0,-s,0],1,0);
+  }},
+  edge:  {n:"Edge detect", ctrl:'fxedge', norm:v=>v/100, run:(d,w,h,edge)=>{
+    const a=d.data, src=new Uint8ClampedArray(a);
+    const kx=[-1,0,1,-2,0,2,-1,0,1], ky=[-1,-2,-1,0,0,0,1,2,1];
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
       let gx=0, gy=0;
-      const kx=[-1,0,1,-2,0,2,-1,0,1], ky=[-1,-2,-1,0,0,0,1,2,1];
       for(let dy=-1,i=0;dy<=1;dy++) for(let dx=-1;dx<=1;dx++,i++){
         const yy=Math.min(h-1,Math.max(0,y+dy)), xx=Math.min(w-1,Math.max(0,x+dx));
         const p=(yy*w+xx)*4, l=0.299*src[p]+0.587*src[p+1]+0.114*src[p+2];
@@ -1745,15 +1772,16 @@ function effects(d, w, h){
       const m=Math.min(255, Math.hypot(gx,gy)), o=(y*w+x)*4;
       a[o]=src[o]*(1-edge)+m*edge; a[o+1]=src[o+1]*(1-edge)+m*edge; a[o+2]=src[o+2]*(1-edge)+m*edge;
     }
-  }
-  if(post>=2){
-    const step=255/(post-1);
+  }},
+  post:  {n:"Posterize", ctrl:'fxpost', max:16, norm:v=>Math.round(v), run:(d,w,h,post)=>{
+    if(post<2) return;
+    const a=d.data, step=255/(post-1);
     for(let i=0;i<a.length;i+=4){
       a[i]=Math.round(a[i]/step)*step; a[i+1]=Math.round(a[i+1]/step)*step; a[i+2]=Math.round(a[i+2]/step)*step;
     }
-  }
-  if(bloom>0){
-    const bright=new Uint8ClampedArray(a.length);
+  }},
+  bloom: {n:"Glow", ctrl:'fxbloom', norm:v=>v/100, run:(d,w,h,bloom)=>{
+    const a=d.data, bright=new Uint8ClampedArray(a.length);
     for(let i=0;i<a.length;i+=4){
       const l=0.299*a[i]+0.587*a[i+1]+0.114*a[i+2];
       const t=l>150 ? (l-150)/105 : 0;
@@ -1767,13 +1795,164 @@ function effects(d, w, h){
       a[i+1]=Math.min(255,a[i+1]+bright[i+1]*bloom);
       a[i+2]=Math.min(255,a[i+2]+bright[i+2]*bloom);
     }
-  }
-  if(scan>0){
+  }},
+  chroma:{n:"Chromatic aberration", ctrl:'fxchroma', norm:v=>v/100, run:(d,w,h,amt)=>{
+    // red and blue pull apart radially, the way a cheap lens splits them
+    const a=d.data, src=new Uint8ClampedArray(a), cx=w/2, cy=h/2;
+    const k = amt*0.05;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const o=(y*w+x)*4, dx=(x-cx)*k, dy=(y-cy)*k;
+      const rx=Math.min(w-1,Math.max(0,Math.round(x+dx))), ry=Math.min(h-1,Math.max(0,Math.round(y+dy)));
+      const bx=Math.min(w-1,Math.max(0,Math.round(x-dx))), by=Math.min(h-1,Math.max(0,Math.round(y-dy)));
+      a[o]   = src[(ry*w+rx)*4];
+      a[o+2] = src[(by*w+bx)*4+2];
+    }
+  }},
+  jpeg:  {n:"JPEG glitch", ctrl:'fxjpeg', norm:v=>v/100, run:(d,w,h,amt)=>{
+    // 8×8 blocks flattened towards their mean, with ringing pushed onto the
+    // block edges — the shape of JPEG failure without an actual DCT
+    const a=d.data, B=8, q=amt;
+    for(let by=0;by<h;by+=B) for(let bx=0;bx<w;bx+=B){
+      let sr=0,sg=0,sb=0,n=0;
+      const x1=Math.min(w,bx+B), y1=Math.min(h,by+B);
+      for(let y=by;y<y1;y++) for(let x=bx;x<x1;x++){ const i=(y*w+x)*4; sr+=a[i]; sg+=a[i+1]; sb+=a[i+2]; n++; }
+      sr/=n; sg/=n; sb/=n;
+      for(let y=by;y<y1;y++) for(let x=bx;x<x1;x++){
+        const i=(y*w+x)*4;
+        const onEdge = (x===bx || y===by || x===x1-1 || y===y1-1);
+        const ring = onEdge ? (1+q*0.5) : 1;
+        a[i]   = (a[i]  *(1-q) + sr*q) * ring;
+        a[i+1] = (a[i+1]*(1-q) + sg*q) * ring;
+        a[i+2] = (a[i+2]*(1-q) + sb*q) * ring;
+      }
+    }
+  }},
+  wave:  {n:"Waveform", ctrl:'fxwave', norm:v=>v/100, run:(d,w,h,amt)=>{
+    const a=d.data, src=new Uint8ClampedArray(a), amp=amt*w*0.12, f=0.14;
+    for(let y=0;y<h;y++){
+      const sh=Math.round(Math.sin(y*f)*amp);
+      if(!sh) continue;
+      for(let x=0;x<w;x++){
+        const o=(y*w+x)*4, sx=Math.min(w-1,Math.max(0,x+sh)), s=(y*w+sx)*4;
+        a[o]=src[s]; a[o+1]=src[s+1]; a[o+2]=src[s+2];
+      }
+    }
+  }},
+  sort:  {n:"Pixel sort", ctrl:'fxsort', norm:v=>v/100, run:(d,w,h,amt)=>{
+    // sort each run of pixels whose luminance sits inside a threshold band
+    const a=d.data, lo=(1-amt)*255*0.5, hi=255-(1-amt)*255*0.2;
+    const lum=i=>0.299*a[i]+0.587*a[i+1]+0.114*a[i+2];
+    for(let y=0;y<h;y++){
+      let x=0;
+      while(x<w){
+        while(x<w){ const l=lum((y*w+x)*4); if(l>=lo&&l<=hi) break; x++; }
+        let end=x;
+        while(end<w){ const l=lum((y*w+end)*4); if(l<lo||l>hi) break; end++; }
+        if(end-x > 2){
+          const run=[];
+          for(let i=x;i<end;i++){ const o=(y*w+i)*4; run.push([a[o],a[o+1],a[o+2],lum(o)]); }
+          run.sort((p,q)=>p[3]-q[3]);
+          for(let i=x;i<end;i++){ const o=(y*w+i)*4, c=run[i-x]; a[o]=c[0]; a[o+1]=c[1]; a[o+2]=c[2]; }
+        }
+        x = end>x ? end : x+1;
+      }
+    }
+  }},
+  slice: {n:"Slice shift", ctrl:'fxslice', norm:v=>v/100, run:(d,w,h,amt)=>{
+    const a=d.data, src=new Uint8ClampedArray(a), rnd=mulberry(fxSeed);
+    let y=0;
+    while(y<h){
+      const band = 1 + Math.floor(rnd()*Math.max(1, h*0.12));
+      const sh = Math.round((rnd()*2-1) * amt * w * 0.3);
+      const y1 = Math.min(h, y+band);
+      if(sh) for(let yy=y;yy<y1;yy++) for(let x=0;x<w;x++){
+        const o=(yy*w+x)*4;
+        let sx=(x+sh)%w; if(sx<0) sx+=w;
+        const s=(yy*w+sx)*4;
+        a[o]=src[s]; a[o+1]=src[s+1]; a[o+2]=src[s+2];
+      }
+      y = y1;
+    }
+  }},
+  scan:  {n:"Scanlines", ctrl:'fxscan', norm:v=>v/100, run:(d,w,h,scan)=>{
+    const a=d.data, f=1-scan*0.8;
     for(let y=1;y<h;y+=2) for(let x=0;x<w;x++){
-      const o=(y*w+x)*4, f=1-scan*0.8;
+      const o=(y*w+x)*4; a[o]*=f; a[o+1]*=f; a[o+2]*=f;
+    }
+  }},
+  vig:   {n:"Vignette", ctrl:'fxvig', norm:v=>v/100, run:(d,w,h,amt)=>{
+    const a=d.data, cx=w/2, cy=h/2, r=Math.hypot(cx,cy);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const o=(y*w+x)*4;
+      const f = 1 - amt*Math.pow(Math.hypot(x-cx,y-cy)/r, 2.2);
       a[o]*=f; a[o+1]*=f; a[o+2]*=f;
     }
+  }},
+};
+const FX_ORDER = ['blur','sharp','edge','post','bloom','chroma','jpeg','wave','sort','slice','scan','vig'];
+
+/* Order is a property of the list, not of any control, so it needs somewhere
+   readCfg() can see it: a hidden input holding a comma-joined key list. Unknown
+   keys are dropped and missing ones appended, so a preset saved before a pass
+   existed still loads and simply gets the new pass at the end. */
+function fxOrder(){
+  const raw = (v('fxorder')||'').split(',').filter(k=>FX[k]);
+  const seen = new Set(raw);
+  return raw.concat(FX_ORDER.filter(k=>!seen.has(k)));
+}
+function effects(d, w, h){
+  for(const k of fxOrder()){
+    const F = FX[k];
+    const raw = num(F.ctrl);
+    if(!raw) continue;
+    F.run(d, w, h, F.norm ? F.norm(raw) : raw);
   }
+}
+
+/* Build the stack once. Reordering *moves* the existing rows rather than
+   rebuilding them, so the boot-time auto-binding on each slider survives. */
+(function buildFxStack(){
+  const box = $('#fxstack');
+  FX_ORDER.forEach(k=>{
+    const F = FX[k];
+    const row = document.createElement('div');
+    row.className = 'fxrow'; row.dataset.fx = k;
+    row.innerHTML =
+      `<div class="sld"><span class="lab"><span></span> <b data-out="${F.ctrl}">0</b></span>` +
+      `<input type="range" id="${F.ctrl}" min="0" max="${F.max||100}" value="0"></div>` +
+      `<div class="fxmove">` +
+        `<button class="fxup" data-nobind aria-label="Move ${F.n} earlier">▲</button>` +
+        `<button class="fxdn" data-nobind aria-label="Move ${F.n} later">▼</button>` +
+      `</div>`;
+    row.querySelector('.lab > span').textContent = F.n;
+    row.querySelector('.fxup').addEventListener('click',()=>moveFx(k,-1));
+    row.querySelector('.fxdn').addEventListener('click',()=>moveFx(k, 1));
+    box.appendChild(row);
+  });
+  $('#fxorder').value = FX_ORDER.join(',');
+})();
+function moveFx(key, dir){
+  const order = fxOrder(), i = order.indexOf(key), j = i+dir;
+  if(i<0 || j<0 || j>=order.length) return;
+  order.splice(j, 0, order.splice(i,1)[0]);
+  $('#fxorder').value = order.join(',');
+  syncFxStack();
+  schedule(); pushHistory(true);
+}
+// reflect #fxorder into the DOM order, and grey out passes that are doing nothing
+function syncFxStack(){
+  const box = $('#fxstack'), order = fxOrder();
+  order.forEach(k=>{
+    const row = box.querySelector(`.fxrow[data-fx="${k}"]`);
+    if(row) box.appendChild(row);           // appendChild moves, it does not clone
+  });
+  order.forEach((k,i)=>{
+    const row = box.querySelector(`.fxrow[data-fx="${k}"]`);
+    if(!row) return;
+    row.classList.toggle('off', !num(FX[k].ctrl));
+    row.querySelector('.fxup').disabled = i===0;
+    row.querySelector('.fxdn').disabled = i===order.length-1;
+  });
 }
 
 /* ---------- quantize ----------
@@ -2175,6 +2354,7 @@ function render(){
   paintPalQuick();
   document.body.classList.toggle('empty', !img);
   distMode = v('dist');
+  fxSeed = Math.round(num('fxseed')) + frameSeed;
   if(!img){ setStatus('—', 0); $('#st-time').textContent='—'; return; }
   if(compareOn){ drawCompare(); return; }
   const t0 = performance.now();
@@ -2210,6 +2390,7 @@ function updateVisibility(){
   $('#wrap-rampcurve').classList.toggle('hidden', !(P.duo||P.ramp||Math.round(num('depth'))>=2));
   $('#wrap-palmap').classList.toggle('hidden', P.ramp);
   paintGridQuick();
+  syncFxStack();
   $$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.classList.toggle('on', b.getAttribute('aria-pressed')==='true'));
   $('#wrap-duo').classList.toggle('hidden', !P.duo);
   $('#wrap-ncol').classList.toggle('hidden', !P.extracted);
@@ -2245,7 +2426,8 @@ function setCompare(on){
 const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell','algo','strength','spread','bias','serp','palette','levels','c0','c1','ncol','acols','charset','custom','rampinv','fsize','lh','font','acolor','afg','abg','atrans','oscale','toclip',
   'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop',
   'depth','palmap','rampcurve','dist',
-  'htshape','htangle','htfreq','htink','htgain','cmyk','ucr'];
+  'htshape','htangle','htfreq','htink','htgain','cmyk','ucr',
+  'fxorder','fxchroma','fxjpeg','fxwave','fxsort','fxslice','fxvig','fxseed'];
 // A control listed here without a matching element used to throw on boot. It is
 // the single easiest mistake to make in this file, so both directions skip
 // quietly instead — an id that has not landed yet simply does not round-trip.
@@ -2819,6 +3001,10 @@ $('#dockpanel').addEventListener('click',()=>{
 $('#dockreset').addEventListener('click',()=>resetAll());
 $('#resetall').addEventListener('click',()=>resetAll());
 function resetAll(){ applyCfg(DEFAULTS); toast('Controls reset'); }
+$('#fxreset').addEventListener('click',()=>{
+  $('#fxorder').value = FX_ORDER.join(',');
+  syncFxStack(); schedule(); pushHistory(true); toast('Effect order reset');
+});
 $('#randomize').addEventListener('click',()=>randomize());
 $('#shuffleadj').addEventListener('click',()=>shuffleAdjustments());
 $$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.addEventListener('click',()=>{
