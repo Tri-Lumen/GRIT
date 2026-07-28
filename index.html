@@ -907,8 +907,18 @@ const ED = {
   sierra2: {n:"Sierra (2 row)",       m:[[1,0,4],[2,0,3],[-2,1,1],[-1,1,2],[0,1,3],[1,1,2],[2,1,1]], d:16},
   sierraL: {n:"Sierra Lite",          m:[[1,0,2],[-1,1,1],[0,1,1]], d:4},
   stevenson:{n:"Stevenson–Arce",      m:[[2,0,32],[-3,1,12],[-1,1,26],[1,1,30],[3,1,16],[-2,2,12],[0,2,26],[2,2,12],[-3,3,5],[-1,3,12],[1,3,12],[3,3,5]], d:200},
+  fan:     {n:"Fan",                  m:[[1,0,7],[-2,1,1],[-1,1,3],[0,1,5]], d:16},
+  shiaufan:{n:"Shiau–Fan",            m:[[1,0,4],[-2,1,1],[-1,1,1],[0,1,2]], d:8},
+  shiaufan2:{n:"Shiau–Fan 2",         m:[[1,0,8],[-3,1,1],[-2,1,1],[-1,1,2],[0,1,4]], d:16},
+  atkinson6:{n:"Atkinson (full error)",m:[[1,0,1],[2,0,1],[-1,1,1],[0,1,1],[1,1,1],[0,2,1]], d:6},
+  burkeslite:{n:"Burkes Lite",        m:[[1,0,4],[-1,1,2],[0,1,2]], d:8},
+  pigeon:  {n:"Pigeon",               m:[[1,0,2],[2,0,1],[-1,1,2],[0,1,2],[1,1,2],[-2,2,1],[0,2,1],[2,2,1]], d:12},
+  riemersma:{n:"Riemersma (Hilbert)", curve:true},
   smear:   {n:"Smear (all right)",    m:[[1,0,1]], d:1},
   fall:    {n:"Fall (all down)",      m:[[0,1,1]], d:1},
+  diagdrift:{n:"Diagonal drift",      m:[[1,0,1],[1,1,1]], d:2},
+  updown:  {n:"Vertical smear",       m:[[0,1,3],[0,2,1]], d:4},
+  split:   {n:"Split (left & right)", m:[[1,0,1],[-1,1,1]], d:2},
 };
 
 function bayer(n){ // n = 2,4,8,16
@@ -925,6 +935,22 @@ function bayer(n){ // n = 2,4,8,16
   return m;
 }
 function normMat(m){ const s=m.length*m[0].length; return m.map(r=>r.map(v=>(v+0.5)/s)); }
+
+/* Rank every cell of an n×n grid by f() and number them 0…n²-1 in that order.
+   Ranking rather than hand-typing guarantees what the matrices have to be:
+   every threshold distinct, none repeated, the full range covered. Most of the
+   patterned screens below are one line because of it. */
+function rankMat(n, f){
+  const cells = [];
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++) cells.push({x, y, k:f(x, y, n)});
+  cells.sort((p,q)=>p.k-q.k);
+  const m = Array.from({length:n}, ()=>new Array(n));
+  cells.forEach((p,i)=>{ m[p.y][p.x]=i; });
+  return m;
+}
+const cdist = (x,y,n) => { const c=(n-1)/2; return Math.hypot(x-c, y-c) + Math.atan2(y-c, x-c)*1e-6; };
+// a deterministic hash, so the "mezzotint" screen is the same every session
+const hash2 = (x,y) => { let s=(x*374761393 + y*668265263) >>> 0; s=(s^(s>>>13))*1274126177>>>0; return (s^(s>>>16))/4294967296; };
 
 const CLUSTER4 = [[12,5,6,13],[4,0,1,7],[11,3,2,8],[15,10,9,14]];
 const CLUSTER8 = [
@@ -946,19 +972,80 @@ const ORD = {
   bayer4:{n:"Bayer 4×4", m:normMat(bayer(4))},
   bayer8:{n:"Bayer 8×8", m:normMat(bayer(8))},
   bayer16:{n:"Bayer 16×16", m:normMat(bayer(16))},
+  bayer32:{n:"Bayer 32×32", m:normMat(bayer(32))},
   cluster4:{n:"Clustered dot 4×4", m:normMat(CLUSTER4)},
+  cluster6:{n:"Clustered dot 6×6", m:normMat(rankMat(6, cdist))},
+  cluster16:{n:"Clustered dot 16×16", m:normMat(rankMat(16, cdist))},
   halftone8:{n:"Halftone 8×8", m:normMat(CLUSTER8)},
+  spiral8:{n:"Spiral 8×8", m:normMat(rankMat(8,(x,y,n)=>{
+    const c=(n-1)/2; let a=Math.atan2(y-c,x-c); if(a<0) a+=Math.PI*2;
+    return a + Math.hypot(x-c,y-c)*0.9;
+  }))},
+  cross8:{n:"Cross-hatch 8×8", m:normMat(rankMat(8,(x,y,n)=>
+    Math.min(Math.abs((x%n)-n/2), Math.abs((y%n)-n/2)) + hash2(x,y)*0.4))},
+  mezzo:{n:"Mezzotint 8×8", m:normMat(rankMat(8, hash2))},
+  magic3:{n:"Magic square 3×3", m:normMat([[7,0,5],[2,4,6],[3,8,1]])},
   hline:{n:"Horizontal lines", m:normMat(HLINE)},
   vline:{n:"Vertical lines", m:normMat(VLINE)},
   diag:{n:"Diagonal 45°", m:normMat(DIAG)},
   check:{n:"Checkerboard", m:normMat(CHECK)},
+  screen:{n:"Halftone screen (adjustable)"},
   ign:{n:"Interleaved gradient", fn:(x,y)=>{
     const v = 52.9829189 * (0.06711056*x + 0.00583715*y);
     return v - Math.floor(v);
   }},
+  blue16:{n:"Blue noise 16×16"},
+  blue32:{n:"Blue noise 32×32"},
   blue:{n:"Blue noise 64×64"},
+  /* modulation — the threshold is a function of position rather than a tile.
+     Everything here is free: `fn` already existed for `ign` and `white`. */
+  sine:{n:"Sine wave", fn:(x,y)=>0.5+0.49*Math.sin(x*0.35 + Math.sin(y*0.12)*3)},
+  rings:{n:"Concentric rings", fn:(x,y,w,h)=>(Math.hypot(x-w/2, y-h/2)*0.3)%1},
+  spiralmod:{n:"Spiral sweep", fn:(x,y,w,h)=>{
+    const a=Math.atan2(y-h/2, x-w/2), d=Math.hypot(x-w/2, y-h/2);
+    return ((a/(Math.PI*2)*4 + d*0.25)%1 + 1)%1;
+  }},
+  plasma:{n:"Plasma", fn:(x,y)=>0.5 + 0.24*(Math.sin(x*0.9)+Math.sin(y*0.77))},
+  weave:{n:"Weave", fn:(x,y)=>(((x>>2)+(y>>2))&1) ? ((x%8)+0.5)/8 : ((y%8)+0.5)/8},
+  moire:{n:"Moiré", fn:(x,y,w,h)=>(
+    (Math.hypot(x-w*0.35, y-h/2)*0.4)%1 + (Math.hypot(x-w*0.65, y-h/2)*0.4)%1)/2},
   white:{n:"White noise", fn:()=>Math.random()},
   none:{n:"Threshold (no dither)", fn:()=>0.5},
+};
+
+/* ---------- halftone screen ----------
+   One parametric screen in place of a drawer full of fixed matrices. Because a
+   rotated screen does not tile on an integer grid, this is a threshold
+   *function*, not a matrix — which is why `make()` exists: it reads the five
+   controls once per render and bakes them into a closure, instead of hitting
+   the DOM inside the pixel loop.
+
+   Shape functions map a position within one screen cell, u,v ∈ [-1,1], to a
+   threshold that is 0 at the dot centre and 1 at the far corner. Low threshold
+   means ink, so the dot grows outwards from the centre as the tone darkens. */
+const HT_SHAPES = {
+  round:   (u,v)=>Math.hypot(u,v)/Math.SQRT2,
+  square:  (u,v)=>Math.max(Math.abs(u), Math.abs(v)),
+  diamond: (u,v)=>(Math.abs(u)+Math.abs(v))/2,
+  ellipse: (u,v)=>Math.hypot(u*1.4, v*0.7)/Math.SQRT2,
+  line:    (u,v)=>Math.abs(v),
+  cross:   (u,v)=>Math.min(Math.abs(u), Math.abs(v))*2,
+};
+ORD.screen.make = function(){
+  const ang = num('htangle')*Math.PI/180;
+  const freq = Math.max(2, num('htfreq'));
+  const ink = num('htink')/100;
+  const gain = num('htgain')/100;
+  const shape = HT_SHAPES[v('htshape')] || HT_SHAPES.round;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  return (x, y)=>{
+    const rx = (x*ca + y*sa)/freq, ry = (y*ca - x*sa)/freq;
+    const u = (rx - Math.floor(rx))*2 - 1, vv = (ry - Math.floor(ry))*2 - 1;
+    let t = Math.min(1, shape(u, vv) / Math.max(0.01, ink));
+    // dot gain: bend the tone curve the way ink spreading does on real paper
+    if(gain) t = Math.pow(t, gain>0 ? 1-gain*0.6 : 1+(-gain)*1.5);
+    return t*0.98 + 0.01;
+  };
 };
 
 /* ---------- blue noise ----------
@@ -1024,11 +1111,61 @@ function blueNoiseTile(N){
   for(let y=0;y<N;y++){ const row=[]; for(let x=0;x<N;x++) row.push(rank[y*N+x]); m.push(row); }
   return normMat(m);
 }
-let _blueTile = null;
-Object.defineProperty(ORD.blue, 'm', {
-  configurable:true,
-  get(){ if(!_blueTile) _blueTile = blueNoiseTile(64); return _blueTile; },
+const _blueTiles = {};
+[['blue16',16], ['blue32',32], ['blue',64]].forEach(([k,N])=>{
+  Object.defineProperty(ORD[k], 'm', {
+    configurable:true,
+    get(){ if(!_blueTiles[N]) _blueTiles[N] = blueNoiseTile(N); return _blueTiles[N]; },
+  });
 });
+
+/* ---------- Hilbert curve (Riemersma) ----------
+   Error diffusion along a space-filling curve rather than in scan order. Every
+   step of the curve is adjacent to the last, so the error never has to be split
+   across a 2D kernel — it goes into a decaying queue instead. The pay-off is
+   that there is no scan direction to leave an artefact: no worms, no streaks,
+   no serpentine seam. Hence no kernel and no `serp` for this one. */
+function d2xy(n, d){
+  let rx, ry, t=d, x=0, y=0;
+  for(let s=1; s<n; s*=2){
+    rx = 1 & (t >> 1);
+    ry = 1 & (t ^ rx);
+    if(ry === 0){
+      if(rx === 1){ x = s-1-x; y = s-1-y; }
+      const tmp = x; x = y; y = tmp;
+    }
+    x += s*rx; y += s*ry;
+    t >>= 2;
+  }
+  return [x, y];
+}
+function riemersmaDither(d, w, h, pal, opts){
+  const L = 16, RATIO = 16;           // queue length and oldest:newest weighting
+  const wt = new Float32Array(L);
+  let tot = 0;
+  for(let i=0;i<L;i++){ wt[i] = Math.pow(RATIO, i/(L-1)); tot += wt[i]; }
+  for(let i=0;i<L;i++) wt[i] /= tot;  // wt[L-1] is the most recent pixel
+  // the curve needs a power-of-two square; cells outside the grid are skipped
+  let n = 1; while(n < Math.max(w,h)) n <<= 1;
+  const a = d.data, str = opts.strength, bias = opts.bias;
+  const qr = new Float32Array(L), qg = new Float32Array(L), qb = new Float32Array(L);
+  let qi = 0;
+  for(let s=0; s<n*n; s++){
+    const [x,y] = d2xy(n, s);
+    if(x >= w || y >= h) continue;
+    let er=0, eg=0, eb=0;
+    for(let k=0;k<L;k++){
+      const j = (qi+k) % L;           // qi is the oldest slot, so k ascends in age
+      er += qr[j]*wt[k]; eg += qg[j]*wt[k]; eb += qb[j]*wt[k];
+    }
+    const i = (y*w+x)*4;
+    const sr = a[i]+er+bias, sg = a[i+1]+eg+bias, sb = a[i+2]+eb+bias;
+    const c = nearest(pal, sr, sg, sb);
+    a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
+    qr[qi]=(sr-c[0])*str; qg[qi]=(sg-c[1])*str; qb[qi]=(sb-c[2])*str;
+    qi = (qi+1) % L;
+  }
+}
 
 /* ---------- algorithm copy ----------
    fs / atkinson / bayer8 are the designer's verbatim strings from the handoff.
@@ -1044,70 +1181,166 @@ const ALGO_INFO = {
   'ed:sierra2':{b:"The two-row cut of Sierra.", p:"Faster than the full kernel, still smooth.", c:"Less shadow separation.", f:"mid-size grids"},
   'ed:sierraL':{b:"Three taps — the least that still reads as diffusion.", p:"Very fast; comfortable on huge grids.", c:"Visible diagonal texture.", f:"live scrubbing"},
   'ed:stevenson':{b:"A wide, sparse kernel built for hex-packed output.", p:"Unusual organic grain with no obvious grid.", c:"Needs a large grid or it just reads as noise.", f:"large prints, texture"},
+  'ed:fan':{b:"Floyd–Steinberg with its error pulled back to the left.", p:"Fewer worms than the original at the same cost.", c:"Slight leftward lean in flat tone.", f:"photos, general use"},
+  'ed:shiaufan':{b:"A four-tap kernel designed specifically against worming.", p:"Clean flat areas; cheap.", c:"Coarser gradients than Stucki.", f:"large flat tone"},
+  'ed:shiaufan2':{b:"The wider Shiau–Fan, reaching three pixels left.", p:"Smoother than its smaller sibling, still worm-free.", c:"Softens fine vertical detail.", f:"portraits, skies"},
+  'ed:atkinson6':{b:"Atkinson's taps, but diffusing all of the error.", p:"Atkinson's crispness without the blown highlights.", c:"Loses the authentic old-Mac contrast.", f:"when Atkinson clips too hard"},
+  'ed:burkeslite':{b:"Three taps cut down from Burkes.", p:"Very fast; holds up on huge grids.", c:"Visible horizontal texture.", f:"live scrubbing, big grids"},
+  'ed:pigeon':{b:"A wide, low-weight kernel that spreads error thinly.", p:"Soft, even grain with little directional bias.", c:"Washes out very fine detail.", f:"soft photographic looks"},
+  'ed:riemersma':{b:"Diffuses along a Hilbert curve instead of in scan order.", p:"No worms, no streaks, no scan direction at all — the most artefact-free option here.", c:"Grain is coarser than Floyd–Steinberg; ignores the serpentine setting.", f:"photographs, print, anything where kernel artefacts show"},
   'ed:smear':{b:"Pushes the entire error into the next pixel.", p:"Long horizontal streaks — a deliberate glitch.", c:"Not a faithful reproduction of anything.", f:"glitch, motion looks"},
   'ed:fall':{b:"Pushes the entire error straight down.", p:"Vertical, rain-like streaking.", c:"An effect, not a reproduction.", f:"glitch, poster texture"},
+  'ed:diagdrift':{b:"Splits the error between right and down-right.", p:"Diagonal comet trails off every edge.", c:"Tone drifts badly; purely an effect.", f:"glitch, motion streaks"},
+  'ed:updown':{b:"Sends everything two rows down, weighted to the first.", p:"Long vertical drips.", c:"Loses horizontal structure entirely.", f:"melt and drip looks"},
+  'ed:split':{b:"Half the error right, half down-left.", p:"Torn, interlaced break-up.", c:"No tonal fidelity at all.", f:"heavy glitch"},
+
   'ord:bayer2':{b:"The smallest ordered matrix — four thresholds.", p:"Extremely coarse, unmistakably digital.", c:"Only four tones; heavy patterning.", f:"chunky 1-bit looks"},
   'ord:bayer4':{b:"Sixteen ordered thresholds in a tileable grid.", p:"Fast, deterministic, classic retro texture.", c:"Obvious cross-hatch on flat tone.", f:"game art, sprites"},
   'ord:bayer8':{b:"Ordered threshold matrix — a fixed, tileable grid.", p:"Fast, deterministic, tiles seamlessly.", c:"Visible cross-hatch pattern at low densities.", f:"textures, backgrounds, print"},
   'ord:bayer16':{b:"256 thresholds — the finest Bayer grid.", p:"Nearly continuous tone, still perfectly tileable.", c:"Pattern goes faint; wants a big grid to read.", f:"large flat gradients"},
+  'ord:bayer32':{b:"1024 thresholds — Bayer taken as far as it goes.", p:"Effectively continuous tone from an ordered matrix.", c:"The pattern all but disappears; use 8×8 if you want to see it.", f:"very large flat gradients"},
   'ord:cluster4':{b:"Grows dots outward from a centre, like a print screen.", p:"Survives low-resolution printing.", c:"Loses fine detail; coarse at small cell sizes.", f:"newsprint, risograph"},
+  'ord:cluster6':{b:"A slightly finer clustered dot than the 4×4.", p:"More tonal steps while still reading as a print screen.", c:"Wants a cell size of 3 or more.", f:"risograph, poster print"},
+  'ord:cluster16':{b:"A large clustered dot with 256 steps.", p:"Smooth print-screen tone; very few visible jumps.", c:"Dots get big — needs a large grid to hold detail.", f:"large-format print"},
+  'ord:spiral8':{b:"Thresholds wound outwards in a spiral.", p:"Dots grow with a twist instead of concentrically.", c:"Strong rotational texture on flat tone.", f:"decorative, pattern work"},
+  'ord:cross8':{b:"A woven cross-hatch of horizontal and vertical runs.", p:"Reads like engraved cross-hatching.", c:"Busy; competes with fine detail.", f:"etching and engraving looks"},
+  'ord:mezzo':{b:"A fixed random ordering — white noise, but deterministic.", p:"Clumped organic grain that never changes between renders.", c:"Clumps the way white noise does; blue noise is cleaner.", f:"mezzotint, aquatint textures"},
+  'ord:magic3':{b:"A 3×3 magic square used as a threshold matrix.", p:"Odd-sized tile, so it fights the pixel grid instead of reinforcing it.", c:"Only nine tones.", f:"coarse, irregular texture"},
+  'ord:screen':{b:"A rotatable halftone screen with an adjustable dot.", p:"Shape, angle, ruling, ink weight and dot gain are all controls — one screen instead of a drawer of fixed ones.", c:"Rotated screens do not tile, so it costs a little more than a matrix.", f:"print work, CMYK separations, poster halftones"},
   'ord:halftone8':{b:"A proper rotated halftone screen.", p:"Reads as classic print halftone.", c:"Eats detail; wants a large cell size.", f:"posters, print pastiche"},
   'ord:hline':{b:"Thresholds arranged into scanlines.", p:"Instant CRT / venetian-blind texture.", c:"Destroys horizontal detail.", f:"CRT and scanline looks"},
   'ord:vline':{b:"Scanlines, rotated a quarter turn.", p:"Strong vertical rhythm; good under type.", c:"Destroys vertical detail.", f:"editorial, column textures"},
   'ord:diag':{b:"A 45° line screen.", p:"Engraving-like hatch that hides the pixel grid.", c:"Strong directional bias.", f:"etching, hatch looks"},
   'ord:check':{b:"Two thresholds, alternating.", p:"Pure 50% dither — the crispest texture available.", c:"Only one intermediate tone.", f:"1-bit UI, icons"},
   'ord:ign':{b:"A hash-based threshold borrowed from real-time graphics.", p:"Fine, even grain with no visible tiling.", c:"Can shimmer when the grid size changes.", f:"smooth shading"},
+  'ord:blue16':{b:"A 16² void-and-cluster tile — blue noise at a coarse scale.", p:"Chunky organic grain; builds instantly.", c:"The tile repeat is visible on large flat areas.", f:"coarse grain, small grids"},
+  'ord:blue32':{b:"A 32² void-and-cluster tile.", p:"The middle ground — organic, and quick to build.", c:"Faint tiling on very large flat areas.", f:"general photographic use"},
   'ord:blue':{b:"A void-and-cluster mask with no low-frequency energy.", p:"Organic grain, no repeating pattern, no cross-hatch.", c:"Softer edges; the 64² tile takes a moment to build the first time.", f:"film-grain looks, photographs"},
+  'ord:sine':{b:"The threshold rides a sine wave that itself wobbles.", p:"Ripples and interference bands through the tone.", c:"Imposes its own rhythm over the image's structure.", f:"wave and moiré looks"},
+  'ord:rings':{b:"Concentric rings radiating from the centre of the grid.", p:"Instant target and ripple patterns.", c:"Anchored to the frame, not the subject.", f:"poster graphics, op-art"},
+  'ord:spiralmod':{b:"A four-armed spiral sweeping out from the centre.", p:"Rotational pull that a tiled matrix cannot produce.", c:"Very strong; overwhelms a busy image.", f:"hypnotic, decorative work"},
+  'ord:plasma':{b:"Two crossed sine fields, the classic demo-scene plasma.", p:"Soft irregular blotching with no grid at all.", c:"Tone response is gently S-curved rather than linear.", f:"organic texture, backgrounds"},
+  'ord:weave':{b:"Alternating blocks of horizontal and vertical ramps.", p:"Reads as woven cloth or basketwork.", c:"The 4-pixel block is obvious at small cell sizes.", f:"textile and pattern looks"},
+  'ord:moire':{b:"Two ring fields offset from each other, beating against each other.", p:"Genuine moiré interference, not a fake of it.", c:"Anchored to the frame; heavy at small grids.", f:"interference and op-art looks"},
   'ord:white':{b:"A fresh random threshold at every pixel.", p:"Cheap, and unmistakably noisy.", c:"Clumps badly — blue noise is almost always the better choice.", f:"heavy grain, glitch"},
   'ord:none':{b:"No dithering — a straight cut at the threshold.", p:"Maximum contrast; clean silhouettes.", c:"Hard banding, no tonal information.", f:"logos, stencils"},
 };
 
-/* ---------- palettes ---------- */
+/* ---------- palettes ----------
+   Credits: Sweetie 16 by GrafxKid; PICO-8 by Lexaloffle; Solarized by Ethan
+   Schoonover. Hardware palettes are the documented values where those are
+   unambiguous. Anything named "-ish" is an approximation tuned by eye rather
+   than a claim about the original hardware — several of these machines had no
+   single correct RGB set to begin with. */
 const hexes = s => s.trim().split(/\s+/).map(h=>{
   const v = parseInt(h.replace('#',''),16);
   return [(v>>16)&255,(v>>8)&255,v&255];
 });
+// build an even ramp between hex stops, for the photographic tone scales
+const ramp2 = (a, b, n) => {
+  const A=hexes(a)[0], B=hexes(b)[0], out=[];
+  for(let i=0;i<n;i++){ const t=i/(n-1); out.push([0,1,2].map(j=>Math.round(A[j]+(B[j]-A[j])*t))); }
+  return out;
+};
 const PALETTES = {
-  duo:      {n:"Two-tone (custom)", duo:true},
-  gray:     {n:"Grayscale ramp", ramp:true},
-  gameboy:  {n:"Game Boy DMG", c:hexes("0f380f 306230 8bac0f 9bbc0f")},
-  gbpocket: {n:"Game Boy Pocket", c:hexes("081820 346856 88c070 e0f8d0")},
-  cga:      {n:"CGA mode 4", c:hexes("000000 55ffff ff55ff ffffff")},
-  cga16:    {n:"CGA 16", c:hexes("000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff")},
-  c64:      {n:"Commodore 64", c:hexes("000000 ffffff 880000 aaffee cc44cc 00cc55 0000aa eeee77 dd8855 664400 ff7777 333333 777777 aaff66 0088ff bbbbbb")},
-  pico8:    {n:"PICO-8", c:hexes("000000 1d2b53 7e2553 008751 ab5236 5f574f c2c3c7 fff1e8 ff004d ffa300 ffec27 00e436 29adff 83769c ff77a8 ffccaa")},
-  sweetie:  {n:"Sweetie 16", c:hexes("1a1c2c 5d275d b13e53 ef7d57 ffcd75 a7f070 38b764 257179 29366f 3b5dc9 41a6f6 73eff7 f4f4f4 94b0c2 566c86 333c57")},
-  nes:      {n:"NES-ish", c:hexes("000000 fcfcfc bcbcbc 7c7c7c f8b800 f83800 e40058 8800f8 0058f8 00b800 58f898 00e8d8")},
-  amber:    {n:"Amber CRT", c:hexes("120b00 4a2c00 a35f00 ffb000 ffd88a")},
-  green:    {n:"Green CRT", c:hexes("001200 004b1e 00a63c 33ff66 aaffcc")},
-  paper:    {n:"Newsprint", c:hexes("1b1a17 4a463d 8c8578 c9c2b2 f2ede1")},
-  riso:     {n:"Riso duo (blue/amber)", c:hexes("0f1120 2b3a8c 7aa2ff ffb347 fff3d6 f6f4ee")},
-  solar:    {n:"Solarized", c:hexes("002b36 073642 586e75 657b83 839496 93a1a1 eee8d5 fdf6e3 b58900 cb4b16 dc322f d33682 6c71c4 268bd2 2aa198 859900")},
-  custom:   {n:"Extracted from image", extracted:true},
+  duo:      {n:"Two-tone (custom)", duo:true, g:"Basic"},
+  gray:     {n:"Grayscale ramp", ramp:true, g:"Basic"},
+  custom:   {n:"Extracted from image", extracted:true, g:"Basic"},
+
+  gameboy:  {n:"Game Boy DMG", g:"Hardware", c:hexes("0f380f 306230 8bac0f 9bbc0f")},
+  gbpocket: {n:"Game Boy Pocket", g:"Hardware", c:hexes("081820 346856 88c070 e0f8d0")},
+  cga:      {n:"CGA mode 4", g:"Hardware", c:hexes("000000 55ffff ff55ff ffffff")},
+  cga16:    {n:"CGA / EGA 16", g:"Hardware", c:hexes("000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff")},
+  win16:    {n:"Windows 16", g:"Hardware", c:hexes("000000 800000 008000 808000 000080 800080 008080 c0c0c0 808080 ff0000 00ff00 ffff00 0000ff ff00ff 00ffff ffffff")},
+  c64:      {n:"Commodore 64", g:"Hardware", c:hexes("000000 ffffff 880000 aaffee cc44cc 00cc55 0000aa eeee77 dd8855 664400 ff7777 333333 777777 aaff66 0088ff bbbbbb")},
+  spectrum: {n:"ZX Spectrum", g:"Hardware", c:hexes("000000 0000d7 d70000 d700d7 00d700 00d7d7 d7d700 d7d7d7 0000ff ff0000 ff00ff 00ff00 00ffff ffff00 ffffff")},
+  msx:      {n:"MSX / TMS9918-ish", g:"Hardware", c:hexes("000000 3eb849 74d07d 5955e0 8076f1 b95e51 65dbef db6559 ff897d ccc35e ded087 3aa241 b766b5 cccccc ffffff")},
+  apple2:   {n:"Apple II hi-res-ish", g:"Hardware", c:hexes("000000 20c000 a000e0 0080ff f05000 ffffff")},
+  teletext: {n:"Teletext 8", g:"Hardware", c:hexes("000000 ff0000 00ff00 ffff00 0000ff ff00ff 00ffff ffffff")},
+  pico8:    {n:"PICO-8", g:"Hardware", c:hexes("000000 1d2b53 7e2553 008751 ab5236 5f574f c2c3c7 fff1e8 ff004d ffa300 ffec27 00e436 29adff 83769c ff77a8 ffccaa")},
+  nes:      {n:"NES-ish", g:"Hardware", c:hexes("000000 fcfcfc bcbcbc 7c7c7c f8b800 f83800 e40058 8800f8 0058f8 00b800 58f898 00e8d8")},
+  vboy:     {n:"Virtual Boy", g:"Hardware", c:hexes("000000 550000 aa0000 ff0000")},
+  nokia:    {n:"Nokia 3310", g:"Hardware", c:hexes("43523d c7f0d8")},
+  mac1bit:  {n:"Macintosh 1-bit", g:"Hardware", c:hexes("000000 ffffff")},
+  obradinn: {n:"Obra Dinn-ish", g:"Hardware", c:hexes("2b2f3b ebe5ce")},
+
+  amber:    {n:"Amber CRT", g:"Screen", c:hexes("120b00 4a2c00 a35f00 ffb000 ffd88a")},
+  green:    {n:"Green CRT", g:"Screen", c:hexes("001200 004b1e 00a63c 33ff66 aaffcc")},
+  vapor:    {n:"Vaporwave", g:"Screen", c:hexes("1a0033 ff71ce b967ff 01cdfe 05ffa1 fffb96")},
+  cyber:    {n:"Cyberpunk neon", g:"Screen", c:hexes("01012b 0d0221 261447 ff2a6d 05d9e8 d1f7ff")},
+  ice:      {n:"Ice", g:"Screen", c:hexes("06111f 123a5c 2e7ba6 76c4dd bfe9f5 f2fbff")},
+  rust:     {n:"Rust & ash", g:"Screen", c:hexes("1a1512 3d2b1f 7a4522 b8682c e0a05a f0ddc0")},
+
+  paper:    {n:"Newsprint", g:"Print", c:hexes("1b1a17 4a463d 8c8578 c9c2b2 f2ede1")},
+  riso:     {n:"Riso duo (blue/amber)", g:"Print", c:hexes("0f1120 2b3a8c 7aa2ff ffb347 fff3d6 f6f4ee")},
+  risofluo: {n:"Riso fluorescent", g:"Print", c:hexes("111111 ff48b0 0078bf ffe800 00a95c ffffff")},
+  cmykpal:  {n:"CMYK plates", g:"Print", c:hexes("000000 00ffff ff00ff ffff00 ffffff")},
+  duoblor:  {n:"Duotone blue / orange", g:"Print", c:hexes("0a1a2f 173c63 3f7ca6 c98a3c f0c07a fdf4e3")},
+  duopkteal:{n:"Duotone pink / teal", g:"Print", c:hexes("14262b 1f5c63 3fa6a0 e0669a f2a3c0 fdeef4")},
+  cyanotype:{n:"Cyanotype", g:"Print", c:hexes("0b1c33 143a63 2f6ea3 8fb9d8 e8f1f7")},
+
+  sepia:    {n:"Sepia 6", g:"Photographic", c:ramp2("1e1408","f4e6cd",6)},
+  selenium: {n:"Selenium 6", g:"Photographic", c:ramp2("14121c","efeef4",6)},
+  platinum: {n:"Platinum 8", g:"Photographic", c:ramp2("221c14","f2ece0",8)},
+  warmgray: {n:"Warm gray 8", g:"Photographic", c:ramp2("1a1815","f2efe9",8)},
+  coolgray: {n:"Cool gray 8", g:"Photographic", c:ramp2("15181a","e9eef2",8)},
+
+  sweetie:  {n:"Sweetie 16", g:"Art", c:hexes("1a1c2c 5d275d b13e53 ef7d57 ffcd75 a7f070 38b764 257179 29366f 3b5dc9 41a6f6 73eff7 f4f4f4 94b0c2 566c86 333c57")},
+  solar:    {n:"Solarized", g:"Art", c:hexes("002b36 073642 586e75 657b83 839496 93a1a1 eee8d5 fdf6e3 b58900 cb4b16 dc322f d33682 6c71c4 268bd2 2aa198 859900")},
 };
 // the five swatches surfaced above the full list
 const PAL_QUICK = ['duo','gray','gameboy','paper','green'];
 
-/* ---------- charsets ---------- */
+/* ---------- charsets ----------
+   Ordered densest-first; every ramp must end with a space.
+
+   `u:true` marks a set that needs glyphs the two embedded faces do not carry —
+   they are latin-only. Those sets render through whatever the browser
+   substitutes, and a substituted glyph rarely has the same advance width, which
+   shears the character grid. `gridSafe()` in the font picker measures for this
+   and the ramp block warns when the active font cannot hold the set. */
 const CHARSETS = {
-  classic:  {n:"Classic ASCII", s:"@%#*+=-:. "},
-  dense:    {n:"Dense 70-step", s:"$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "},
-  blocks:   {n:"Block shades", s:"█▓▒░ "},
-  half:     {n:"Block mix", s:"█▀▄▌▐░· "},
-  braille:  {n:"Braille (2×4 dots)", braille:true},
-  numeric:  {n:"Numeric", s:"98765432 "},
-  binary:   {n:"Binary", s:"10 "},
-  hex:      {n:"Hexadecimal", s:"FEDCBA9876543210 "},
-  symbols:  {n:"Symbols", s:"@#$%&*+=;:,. "},
-  geometric:{n:"Geometric", s:"◼◙◚▣▤▥▦▧▨▩◇○◌· "},
-  circles:  {n:"Dots & circles", s:"●◕◑◔○◦· "},
-  cards:    {n:"Cards & pips", s:"♠♣♥♦♢♡· "},
-  katakana: {n:"Katakana", s:"驫麤鑿龍籠襲鷹鴉夜雨爪ハ二丶ミ・ "},
-  arrows:   {n:"Arrows", s:"▓▒░◤◥◣◢↑↓←→· "},
-  thin:     {n:"Hairline", s:"▮▊▌▎│┃╎ⵊ˙ "},
-  runes:    {n:"Runic", s:"ᛗᛜᛒᚹᚷᚲᛁᛂ˙ "},
-  ledger:   {n:"Ledger marks", s:"█▉▊▋▌▍▎▏ "},
-  custom:   {n:"Custom ramp…", custom:true},
+  classic:  {n:"Classic ASCII", g:"Classic", s:"@%#*+=-:. "},
+  dense:    {n:"Dense 70-step", g:"Classic", s:"$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "},
+  minimal:  {n:"Minimal", g:"Classic", s:"#+-. "},
+  contrast: {n:"Two-step", g:"Classic", s:"@. "},
+  typew:    {n:"Typewriter", g:"Classic", s:"WM#*+=-. "},
+  symbols:  {n:"Symbols", g:"Classic", s:"@#$%&*+=;:,. "},
+
+  blocks:   {n:"Block shades", g:"Blocks", s:"█▓▒░ ", u:true},
+  half:     {n:"Block mix", g:"Blocks", s:"█▀▄▌▐░· ", u:true},
+  ledger:   {n:"Ledger marks", g:"Blocks", s:"█▉▊▋▌▍▎▏ ", u:true},
+  quadrant: {n:"Quadrants", g:"Blocks", s:"█▛▜▙▟▖▗▘▝ ", u:true},
+  boxdraw:  {n:"Box drawing", g:"Blocks", s:"╬╫╪┼┽┾╁╀│─ ", u:true},
+  thin:     {n:"Hairline", g:"Blocks", s:"▮▊▌▎│┃╎ⵊ˙ ", u:true},
+
+  braille:  {n:"Braille (2×4 dots)", g:"Braille", braille:true, u:true},
+
+  numeric:  {n:"Numeric", g:"Technical", s:"98765432 "},
+  binary:   {n:"Binary", g:"Technical", s:"10 "},
+  hex:      {n:"Hexadecimal", g:"Technical", s:"FEDCBA9876543210 "},
+  sevenseg: {n:"Seven-segment", g:"Technical", s:"8069453217 "},
+  currency: {n:"Currency", g:"Technical", s:"₩₦₮฿₹€¥$¢. ", u:true},
+
+  geometric:{n:"Geometric", g:"Geometric", s:"◼◙◚▣▤▥▦▧▨▩◇○◌· ", u:true},
+  circles:  {n:"Dots & circles", g:"Geometric", s:"●◕◑◔○◦· ", u:true},
+  arrows:   {n:"Arrows", g:"Geometric", s:"▓▒░◤◥◣◢↑↓←→· ", u:true},
+  stars:    {n:"Stars", g:"Geometric", s:"✦✧★☆✩✫· ", u:true},
+
+  katakana: {n:"Katakana", g:"Language", s:"驫麤鑿龍籠襲鷹鴉夜雨爪ハ二丶ミ・ ", u:true},
+  runes:    {n:"Runic", g:"Language", s:"ᛗᛜᛒᚹᚷᚲᛁᛂ˙ ", u:true},
+  greek:    {n:"Greek", g:"Language", s:"ΩΨΦΞΠΣΘΔΛΓι· ", u:true},
+  cyrillic: {n:"Cyrillic", g:"Language", s:"ЖШЩФБДЦЛГтс· ", u:true},
+  hanzi:    {n:"Hanzi density", g:"Language", s:"豳鸞麤龗鑿龍鳥口十丶一 ", u:true},
+
+  cards:    {n:"Cards & pips", g:"Games", s:"♠♣♥♦♢♡· ", u:true},
+  chess:    {n:"Chess", g:"Games", s:"♛♜♝♞♟♙♘♗♖♕· ", u:true},
+  dice:     {n:"Dice", g:"Games", s:"⚅⚄⚃⚂⚁⚀ ", u:true},
+  dominoes: {n:"Dominoes", g:"Games", s:"🀹🀸🀷🀶🀵🀴🀳 ", u:true},
+  tally:    {n:"Tally marks", g:"Games", s:"𝍫𝍪𝍩𝍨𝍧 ", u:true},
+  music:    {n:"Music", g:"Games", s:"♬♫♪♩· ", u:true},
+
+  custom:   {n:"Custom ramp…", g:"Custom", custom:true},
 };
 
 /* ---------- font catalogue ----------
@@ -1160,12 +1393,58 @@ const FONT_CLASSES = [
 
 /* ---------- looks (presets) ---------- */
 const LOOKS = {
-  xerox:    {n:"Xerox",       d:"1-bit, blown out", cfg:{palette:'duo', c0:'#141414', c1:'#f4f1e8', levels:'2', algo:'ed:atkinson', cols:'300', cell:'2', contrast:'40', bright:'-4'}, cm:'mono', mode:'dither'},
-  newsprint:{n:"Newsprint",   d:"halftone screen",  cfg:{palette:'paper', algo:'ord:halftone8', cols:'220', cell:'3', contrast:'18', spread:'1.15'}, cm:'color', mode:'dither'},
-  gameboy:  {n:"Game Boy",    d:"four greens",      cfg:{palette:'gameboy', algo:'ed:atkinson', cols:'160', cell:'4', sat:'0'}, cm:'color', mode:'dither'},
-  crt:      {n:"CRT green",   d:"scanline screen",  cfg:{palette:'green', algo:'ord:hline', cols:'240', cell:'3', contrast:'25', gamma:'0.85'}, cm:'color', mode:'dither'},
-  terminal: {n:"Terminal",    d:"classic ASCII",    cfg:{charset:'classic', acols:'140', algo:'ed:fs', acolor:'flat', afg:'#D9DBD5', abg:'#171717', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
-  braille:  {n:"Braille micro",d:"2×4 dot packing", cfg:{charset:'braille', acols:'120', algo:'ed:atkinson', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  /* Print & repro */
+  newsprint:{n:"Newsprint",   g:"Print & repro", d:"halftone screen",  cfg:{palette:'paper', algo:'ord:halftone8', cols:'220', cell:'3', contrast:'18', spread:'1.15'}, cm:'color', mode:'dither'},
+  newsfine: {n:"Newsprint fine",g:"Print & repro", d:"tight screen",   cfg:{palette:'paper', algo:'ord:cluster6', cols:'340', cell:'2', contrast:'12', spread:'1.05'}, cm:'color', mode:'dither'},
+  riso:     {n:"Riso duo",    g:"Print & repro", d:"blue & amber",     cfg:{palette:'riso', algo:'ord:cluster4', cols:'200', cell:'3', contrast:'22', sat:'120'}, cm:'color', mode:'dither'},
+  risofluo: {n:"Riso fluoro", g:"Print & repro", d:"fluorescent inks", cfg:{palette:'risofluo', algo:'ed:atkinson', cols:'190', cell:'3', contrast:'28', sat:'135'}, cm:'color', mode:'dither'},
+  xerox:    {n:"Xerox",       g:"Print & repro", d:"1-bit, blown out", cfg:{palette:'duo', c0:'#141414', c1:'#f4f1e8', levels:'2', algo:'ed:atkinson', cols:'300', cell:'2', contrast:'40', bright:'-4'}, cm:'mono', mode:'dither'},
+  thermal:  {n:"Thermal receipt",g:"Print & repro", d:"384-column roll", cfg:{palette:'duo', c0:'#1a1a1a', c1:'#f6f4ec', algo:'ed:atkinson', cols:'384', cell:'1', contrast:'45', bright:'6'}, cm:'mono', mode:'dither'},
+  fax:      {n:"Fax",         g:"Print & repro", d:"over-contrasted",  cfg:{palette:'duo', c0:'#111111', c1:'#ffffff', algo:'ord:bayer2', cols:'220', cell:'2', contrast:'65', gamma:'0.9'}, cm:'mono', mode:'dither'},
+  etching:  {n:"Etching",     g:"Print & repro", d:"45° hatch",        cfg:{palette:'duo', c0:'#17150f', c1:'#efe7d3', algo:'ord:cross8', cols:'320', cell:'2', contrast:'35'}, cm:'mono', mode:'dither'},
+  silk:     {n:"Silkscreen",  g:"Print & repro", d:"fat dots",         cfg:{palette:'duo', c0:'#101010', c1:'#f0ece2', algo:'ord:cluster4', cols:'120', cell:'6', contrast:'30'}, cm:'mono', mode:'dither'},
+  blueprint:{n:"Blueprint",   g:"Print & repro", d:"cyanotype",        cfg:{palette:'cyanotype', algo:'ord:bayer8', cols:'260', cell:'2', contrast:'20', invert:true}, cm:'color', mode:'dither'},
+  cmyk:     {n:"CMYK plates", g:"Print & repro", d:"four-colour screen",cfg:{palette:'cmykpal', algo:'ord:screen', htshape:'round', htangle:'15', htfreq:'6', cols:'240', cell:'3', contrast:'15'}, cm:'color', mode:'dither'},
+
+  /* Console & retro */
+  gameboy:  {n:"Game Boy",    g:"Console & retro", d:"four greens",    cfg:{palette:'gameboy', algo:'ed:atkinson', cols:'160', cell:'4', sat:'0'}, cm:'color', mode:'dither'},
+  gbpocket: {n:"Game Boy Pocket",g:"Console & retro", d:"colder greens",cfg:{palette:'gbpocket', algo:'ord:bayer4', cols:'160', cell:'4', sat:'0'}, cm:'color', mode:'dither'},
+  c64:      {n:"Commodore 64",g:"Console & retro", d:"16 colours",     cfg:{palette:'c64', algo:'ed:fs', cols:'160', cell:'4', sat:'115'}, cm:'color', mode:'dither'},
+  pico8:    {n:"PICO-8",      g:"Console & retro", d:"sprite palette", cfg:{palette:'pico8', algo:'ed:burkes', cols:'128', cell:'5', contrast:'15'}, cm:'color', mode:'dither'},
+  nes:      {n:"NES",         g:"Console & retro", d:"console-ish",    cfg:{palette:'nes', algo:'ed:stucki', cols:'170', cell:'4'}, cm:'color', mode:'dither'},
+  cga:      {n:"CGA mode 4",  g:"Console & retro", d:"cyan & magenta", cfg:{palette:'cga', algo:'ed:fs', cols:'180', cell:'3', sat:'140', contrast:'20'}, cm:'color', mode:'dither'},
+  spectrum: {n:"ZX Spectrum", g:"Console & retro", d:"attribute clash",cfg:{palette:'spectrum', algo:'ord:bayer4', cols:'128', cell:'5', sat:'130'}, cm:'color', mode:'dither'},
+  mac1bit:  {n:"Macintosh",   g:"Console & retro", d:"512×342, 1-bit", cfg:{palette:'mac1bit', algo:'ed:atkinson', cols:'256', cell:'2', contrast:'25'}, cm:'mono', mode:'dither'},
+  sweetie:  {n:"Sweetie pop", g:"Console & retro", d:"modern 16",      cfg:{palette:'sweetie', algo:'ord:bayer4', cols:'180', cell:'4', sat:'120'}, cm:'color', mode:'dither'},
+
+  /* Screen */
+  crt:      {n:"CRT green",   g:"Screen", d:"scanline screen",         cfg:{palette:'green', algo:'ord:hline', cols:'240', cell:'3', contrast:'25', gamma:'0.85'}, cm:'color', mode:'dither'},
+  amber:    {n:"Amber CRT",   g:"Screen", d:"monitor phosphor",        cfg:{palette:'amber', algo:'ord:hline', cols:'240', cell:'3', contrast:'28', gamma:'0.85', fxbloom:'35'}, cm:'color', mode:'dither'},
+  vhs:      {n:"VHS",         g:"Screen", d:"soft, bloomed, torn",     cfg:{palette:'gray', levels:'8', algo:'ed:sierra2', cols:'200', cell:'3', fxblur:'1', fxbloom:'45', fxscan:'35', fxchroma:'25'}, cm:'color', mode:'dither'},
+  vapor:    {n:"Vaporwave",   g:"Screen", d:"pink & teal",             cfg:{palette:'vapor', algo:'ord:bayer8', cols:'200', cell:'3', sat:'150'}, cm:'color', mode:'dither'},
+
+  /* Photographic */
+  filmgrain:{n:"Film grain",  g:"Photographic", d:"8-step blue noise", cfg:{palette:'gray', levels:'8', algo:'ord:blue', cols:'420', cell:'1', noise:'10', contrast:'12'}, cm:'mono', mode:'dither'},
+  platinum: {n:"Platinum print",g:"Photographic", d:"warm 8-step",     cfg:{palette:'platinum', algo:'ord:blue32', cols:'400', cell:'1', gamma:'1.15'}, cm:'color', mode:'dither'},
+  mezzo:    {n:"Mezzotint",   g:"Photographic", d:"organic clumps",    cfg:{palette:'duo', c0:'#141210', c1:'#ece7dc', algo:'ord:mezzo', cols:'300', cell:'2', contrast:'20'}, cm:'mono', mode:'dither'},
+  hilbert:  {n:"Hilbert grain",g:"Photographic", d:"no scan artefact", cfg:{palette:'gray', levels:'4', algo:'ed:riemersma', cols:'360', cell:'1'}, cm:'mono', mode:'dither'},
+
+  /* Glitch */
+  smear:    {n:"Smear",       g:"Glitch", d:"horizontal bleed",        cfg:{algo:'ed:smear', palette:'duo', cols:'240', cell:'3', contrast:'30'}, cm:'mono', mode:'dither'},
+  rain:     {n:"Rain",        g:"Glitch", d:"vertical bleed",          cfg:{algo:'ed:fall', palette:'duo', cols:'240', cell:'3', contrast:'25'}, cm:'mono', mode:'dither'},
+  wave:     {n:"Waveform",    g:"Glitch", d:"modulated threshold",     cfg:{algo:'ord:sine', palette:'duo', cols:'260', cell:'3', contrast:'20'}, cm:'mono', mode:'dither'},
+  datablock:{n:"Datablock",   g:"Glitch", d:"JPEG & chroma tear",      cfg:{algo:'ed:split', palette:'cyber', cols:'220', cell:'3', fxjpeg:'55', fxchroma:'40', fxslice:'30', sat:'130'}, cm:'color', mode:'dither'},
+  moire:    {n:"Moiré",       g:"Glitch", d:"ring interference",       cfg:{algo:'ord:moire', palette:'duo', cols:'300', cell:'2', contrast:'25'}, cm:'mono', mode:'dither'},
+
+  /* ASCII */
+  terminal: {n:"Terminal",    g:"ASCII", d:"classic ASCII",            cfg:{charset:'classic', acols:'140', algo:'ed:fs', acolor:'flat', afg:'#D9DBD5', abg:'#171717', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  braille:  {n:"Braille micro",g:"ASCII", d:"2×4 dot packing",         cfg:{charset:'braille', acols:'120', algo:'ed:atkinson', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  matrix:   {n:"Matrix rain", g:"ASCII", d:"katakana, green ink",      cfg:{charset:'katakana', acols:'150', algo:'ord:bayer4', afg:'#39ff6a', abg:'#04120a', fsize:'11', lh:'0.95'}, cm:'mono', mode:'ascii'},
+  typewriter:{n:"Typewriter", g:"ASCII", d:"Courier on paper",         cfg:{charset:'typew', acols:'110', algo:'ed:atkinson', font:'"Courier New", monospace', afg:'#20201c', abg:'#f3efe3', fsize:'13', lh:'1.05'}, cm:'mono', mode:'ascii'},
+  shaded:   {n:"Block shaded",g:"ASCII", d:"▓▒░",                      cfg:{charset:'blocks', acols:'120', algo:'ed:fs', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  ledgerbar:{n:"Ledger bars", g:"ASCII", d:"eighth blocks",            cfg:{charset:'ledger', acols:'160', algo:'ord:bayer8', fsize:'11', lh:'1'}, cm:'mono', mode:'ascii'},
+  runic:    {n:"Runic",       g:"ASCII", d:"carved",                   cfg:{charset:'runes', acols:'100', algo:'ed:atkinson', afg:'#d8c9a3', abg:'#141210'}, cm:'mono', mode:'ascii'},
+  numprint: {n:"Numeric",     g:"ASCII", d:"printout",                 cfg:{charset:'numeric', acols:'140', algo:'ord:bayer4', afg:'#c9d1c9', abg:'#101410'}, cm:'mono', mode:'ascii'},
 };
 
 /* ---------- state ---------- */
@@ -1193,13 +1472,20 @@ let history = [];
   for(const k in ORD){ const o=document.createElement('option'); o.value='ord:'+k; o.textContent=ORD[k].n; g2.appendChild(o); }
   a.append(g1,g2); a.value='ed:fs';
 
-  const p = $('#palette');
-  for(const k in PALETTES){ const o=document.createElement('option'); o.value=k; o.textContent=PALETTES[k].n; p.appendChild(o); }
-  p.value='duo';
-
-  const c = $('#charset');
-  for(const k in CHARSETS){ const o=document.createElement('option'); o.value=k; o.textContent=CHARSETS[k].n; c.appendChild(o); }
-  c.value='classic';
+  // both lists are long enough now to need grouping; `g` is the section name
+  const grouped = (sel, map, fallback) => {
+    let g=null, box=sel;
+    for(const k in map){
+      if(map[k].g && map[k].g!==g){
+        g=map[k].g;
+        box=document.createElement('optgroup'); box.label=g; sel.appendChild(box);
+      }
+      const o=document.createElement('option'); o.value=k; o.textContent=map[k].n; box.appendChild(o);
+    }
+    sel.value=fallback;
+  };
+  grouped($('#palette'), PALETTES, 'duo');
+  grouped($('#charset'), CHARSETS, 'classic');
 
   // #font stays the single source of truth; the picker above it is just a nicer face on it
   const f = $('#font');
@@ -1403,10 +1689,13 @@ function ditherPixels(d, w, h, pal, algoKey, opts){
   const bias = opts.bias;
   if(kind==='ord'){
     const O = ORD[key], sp = opts.spread * stepGuess(pal);
+    // Parametric screens build a specialised threshold function once per render
+    // (make) rather than reading their controls inside the pixel loop.
+    const fn = O.make ? O.make(w,h) : O.fn;
     const a = d.data;
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
       const i=(y*w+x)*4;
-      let t = O.fn ? O.fn(x,y) : O.m[y%O.m.length][x%O.m[0].length];
+      let t = fn ? fn(x,y,w,h) : O.m[y%O.m.length][x%O.m[0].length];
       const off = (t-0.5)*sp + bias;
       const c = nearest(pal, a[i]+off, a[i+1]+off, a[i+2]+off);
       a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
@@ -1414,6 +1703,7 @@ function ditherPixels(d, w, h, pal, algoKey, opts){
     return;
   }
   const E = ED[key], str = opts.strength;
+  if(E.curve) return riemersmaDither(d, w, h, pal, opts);
   const buf = new Float32Array(w*h*3), a = d.data;
   for(let p=0,i=0;p<w*h;p++,i+=4){ buf[p*3]=a[i]+bias; buf[p*3+1]=a[i+1]+bias; buf[p*3+2]=a[i+2]+bias; }
   for(let y=0;y<h;y++){
@@ -1830,26 +2120,41 @@ $('#swedit').addEventListener('input',()=>{
 });
 $('#swedit').addEventListener('change',()=>pushHistory());
 
-/* ---------- presets ---------- */
-(function(){
-  const w=$('#presetlist');
+/* ---------- presets ----------
+   A look is a *sparse* config. Applying it over the current state would let
+   whatever the user last touched leak through, so every look is layered onto
+   DEFAULTS instead — the same look always produces the same picture. Only the
+   extracted palette survives, because it belongs to the image, not the look. */
+function applyLook(L){
+  const cfg = Object.assign({}, DEFAULTS, L.cfg);
+  cfg.mode = L.mode || DEFAULTS.mode;
+  cfg.colormode = L.cm || DEFAULTS.colormode;
+  if(extracted) cfg.extracted = extracted;
+  applyCfg(cfg);
+  pushHistory(true);
+  toast(`${L.n} applied`);
+}
+function renderPresets(){
+  const w=$('#presetlist'); w.innerHTML='';
+  let group='';
   for(const k in LOOKS){
     const L=LOOKS[k];
+    if(L.g && L.g!==group){
+      group=L.g;
+      const s=document.createElement('div');
+      s.className='sec'; s.style.margin='12px 0 6px'; s.textContent=group;
+      w.appendChild(s);
+    }
     const b=document.createElement('button');
     b.className='row';
     b.innerHTML=`<span class="rl"></span><span class="rr"></span>`;
     b.querySelector('.rl').textContent=L.n;
     b.querySelector('.rr').textContent=L.d;
-    b.addEventListener('click',()=>{
-      for(const id in L.cfg){ const e=$('#'+id); if(!e) continue; if(e.type==='checkbox') e.checked=L.cfg[id]; else e.value=L.cfg[id]; }
-      if(L.cm) colormode=L.cm;
-      if(L.mode) mode=L.mode;
-      compareOn=false;
-      schedule(); pushHistory(true); toast(`${L.n} applied`);
-    });
+    b.addEventListener('click',()=>applyLook(L));
     w.appendChild(b);
   }
-})();
+}
+renderPresets();
 
 /* ---------- vector + markup export ---------- */
 const hex2 = n => n.toString(16).padStart(2,'0');
