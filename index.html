@@ -539,7 +539,7 @@
 <div id="titlebar">
   <div class="lights"><span></span><span></span><span></span></div>
   <div id="doctitle">GRIT — no image</div>
-  <button id="cmdk" title="Command palette">⌘K</button>
+  <button id="cmdk" data-kbd="k" title="Command palette"></button>
 </div>
 
 <div id="app">
@@ -959,7 +959,7 @@
       <canvas id="out" width="600" height="400"></canvas>
       <div id="empty">
         <div class="et">Drop an image here</div>
-        <div class="note">or click to browse · paste with ⌘V · or load the test card</div>
+        <div class="note">or click to browse · paste with <b data-kbd="v"></b> · or load the test card</div>
         <div class="chips" style="margin-top:6px">
           <button class="chip on" id="emptybrowse">Browse</button>
           <button class="chip" id="emptysample">Test card</button>
@@ -1075,6 +1075,33 @@
 "use strict";
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
+
+/* ---------- platform ----------
+   Only the printed *labels* were ever Mac-only. The handler already accepts
+   either modifier, because ⌘ and Ctrl arrive as metaKey and ctrlKey on the same
+   event — so this changes what the UI says, not what it listens for.
+
+   Detected once, at boot. `navigator.userAgentData` is the current API but is
+   Chromium-only, and `navigator.platform` is deprecated yet still the only one
+   Safari and Firefox answer, so it stays as the fallback. Both are synchronous
+   and entirely local: nothing here reaches the network, which the file has to
+   keep true.
+
+   Keyboard *layout* is deliberately not consulted. The unmodified shortcuts read
+   `e.key`, which is already the layout-mapped character, so `a` is whatever key
+   is printed "A" on the user's keyboard. Reading `e.code` instead — the usual
+   reflex for "supporting layouts" — would do the exact opposite: it would pin
+   ASCII mode to the physical QWERTY-A position, which on AZERTY is the key
+   printed Q. `navigator.keyboard.getLayoutMap()` exists for relabelling, but it
+   is Chromium-only and async, and there is nothing here it could correct. */
+const isMac = p => /mac|iphone|ipad|ipod/i.test(p || '');
+const MAC = isMac((navigator.userAgentData && navigator.userAgentData.platform)
+  || navigator.platform || navigator.userAgent);
+// Mac stacks bare glyphs with shift first (⇧⌘Z); everywhere else spells the
+// modifiers out, joined with +, with Ctrl first (Ctrl+Shift+Z).
+const kbd = (key, shift, mac=MAC) => mac
+  ? `${shift?'⇧':''}⌘${key.toUpperCase()}`
+  : `Ctrl+${shift?'Shift+':''}${key.toUpperCase()}`;
 
 /* ---------- algorithms ---------- */
 // error diffusion: [dx, dy, weight]
@@ -3468,7 +3495,7 @@ $('#pastebtn').addEventListener('click', async ()=>{
       if(type){ loadFile(new File([await it.getType(type)], 'clipboard.png', {type})); return; }
     }
     toast('No image on the clipboard');
-  }catch(e){ toast('Clipboard blocked — press ⌘V instead'); }
+  }catch(e){ toast(`Clipboard blocked — press ${kbd('v')} instead`); }
 });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ e.preventDefault(); document.body.classList.add('dragging'); }));
 ['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{ e.preventDefault(); if(ev==='drop'||e.target===document.documentElement) document.body.classList.remove('dragging'); }));
@@ -3918,8 +3945,8 @@ function buildCommands(){
     c.push({k:'clip', n:'Export WebM', run:()=>{ openExport(); expFormat='webm'; markFormat(); updateExportSummary(); }});
     c.push({k:'clip', n:'Export PNG frame sequence', run:()=>{ openExport(); expFormat='zip'; markFormat(); updateExportSummary(); }});
   }
-  c.push({k:'edit', n:'Undo', h:'⌘Z', run:undo});
-  c.push({k:'edit', n:'Redo', h:'⇧⌘Z', run:redo});
+  c.push({k:'edit', n:'Undo', h:kbd('z'), run:undo});
+  c.push({k:'edit', n:'Redo', h:kbd('z',true), run:redo});
   c.push({k:'edit', n:'Randomize settings', h:'R', run:randomize});
   c.push({k:'view', n:'Zoom in', run:()=>stepZoom(1)});
   c.push({k:'view', n:'Zoom out', run:()=>stepZoom(-1)});
@@ -4002,6 +4029,7 @@ $('#cmdscrim').addEventListener('mousedown', e=>{ if(e.target===$('#cmdscrim')) 
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openCmd(); return; }
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+  if(!MAC && e.ctrlKey && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if(e.key==='Escape'){
     if($('#cmdscrim').classList.contains('on')) return closeCmd();
     if($('#expscrim').classList.contains('on')) return closeExport();
@@ -4023,6 +4051,7 @@ document.addEventListener('keydown',e=>{
 });
 
 /* ---------- boot ---------- */
+$$('[data-kbd]').forEach(e=>{ e.textContent = kbd(e.dataset.kbd, e.hasAttribute('data-kbd-shift')); });
 syncOuts(); updateVisibility(); paintPalQuick(); paintSwatches(currentPalette());
 renderAlgoCard(); renderFontList(); pushHistory(true);
 </script>

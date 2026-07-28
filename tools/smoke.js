@@ -462,6 +462,35 @@ const path = process.argv.find(a=>a.endsWith('.html')) || require('path').join(_
   if (panel.dotClean) fail('the reveal button stayed marked with everything at its default');
   console.log(`  mode gating covers 3 modes; ${panel.n} advanced controls hide at Basic without changing the picture`);
 
+  // 6l. shortcut labels follow the platform. The bindings were always
+  //     cross-platform — ⌘ and Ctrl arrive as metaKey and ctrlKey on the same
+  //     event — so what this guards is the printed glyph: a Mac symbol shown to
+  //     someone on Windows. The palette has to be open, since its hints are
+  //     built by openCmd() rather than sitting in the markup.
+  await page.evaluate(() => openCmd());
+  await page.waitForTimeout(150);
+  const keys = await page.evaluate(() => ({
+    mac: ['MacIntel', 'iPhone', 'iPad', 'Mac OS X', 'macOS'].map(p => isMac(p)),
+    other: ['Win32', 'Windows', 'Linux x86_64', 'Android', '', null].map(p => isMac(p)),
+    here: MAC,
+    macLabels: [kbd('k', false, true), kbd('z', true, true)].join(' '),
+    winLabels: [kbd('k', false, false), kbd('z', true, false)].join(' '),
+    // textContent, not innerText: half of this is deliberately hidden. Scoped to
+    // the UI containers because <script> lives in <body> and is full of glyphs.
+    ui: ['#titlebar', '#app', '#cmdcard', '#expcard']
+      .map(s => document.querySelector(s).textContent).join(' '),
+    labelled: document.querySelectorAll('[data-kbd]').length,
+  }));
+  await page.evaluate(() => closeCmd());
+  if (keys.mac.some(v => !v)) fail('isMac rejected a macOS platform string');
+  if (keys.other.some(v => v)) fail('isMac accepted a non-macOS platform string');
+  if (keys.macLabels !== '⌘K ⇧⌘Z') fail(`mac labels came out as "${keys.macLabels}"`);
+  if (keys.winLabels !== 'Ctrl+K Ctrl+Shift+Z') fail(`non-mac labels came out as "${keys.winLabels}"`);
+  if (!keys.labelled) fail('nothing is marked data-kbd');
+  if (!keys.here && /[⌘⇧]/.test(keys.ui)) fail('a Mac modifier glyph is printed on a non-Mac platform');
+  if (keys.here && /Ctrl\+/.test(keys.ui)) fail('a Ctrl label is printed on a Mac');
+  console.log(`  shortcut labels follow the platform (this one: ${keys.here ? 'mac' : 'ctrl'}), ${keys.labelled} declared`);
+
   // 7. config round-trip — the check that actually catches a missing CFG_IDS entry
   const rt = await page.evaluate(() => {
     const before = JSON.stringify(readCfg());
