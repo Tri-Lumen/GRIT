@@ -3,33 +3,45 @@
 Nothing here is committed — it's the list of things considered and parked.
 Ordered roughly by value-to-effort.
 
+See `docs/FEATURE_PLAN.md` for the phased plan that mirrors Dither Boy's feature
+set — it supersedes several entries below (effect stack reordering, more
+palettes, batch export) with concrete implementation sketches.
+
 ## Small
 
 - [x] **Before/after toggle.** Shipped as a toggle (`c`, or the toolbar / dock button).
-- [ ] **Batch export.** Drop several files, apply current settings, save all as PNGs.
-- [ ] **More palettes.** Lospec hex lists paste straight into `PALETTES`.
-- [x] **Preset buttons.** Shipped as the Presets tab — six named looks on the
-      existing `CFG_IDS` serialization.
+- [x] **Batch export.** Shipped. Drop several files, current settings applied to
+      each, one stored-mode ZIP out. Mixed sizes work — the grid is in cells.
+- [x] **More palettes.** Shipped — 39, grouped by kind, with a credits note.
+- [x] **Preset buttons.** Shipped as the Presets tab — 41 named looks, grouped by
+      use, on the existing `CFG_IDS` serialization.
 - [x] **Copy as HTML.** Shipped. ASCII exports a `<pre>` with per-run colour spans;
       dither mode exports the inline SVG.
 - [x] **Palette editor.** Shipped in part — extracted swatches are recolourable in
       place. Add/remove/reorder is still open.
+- [x] **Preset packs.** Shipped. Save named looks and move several at once
+      through the clipboard as one JSON pack.
 
 ## Medium
 
-- [x] **Effects stack.** Shipped as a fixed-order pre-dither pass (`effects()`):
-      blur, sharpen, edge detect, posterize, bloom, scanlines. Reorderable passes
-      and chromatic aberration / JPEG-artifact simulation are still open — a
-      reorderable list is still the architectural change this list implies.
-- [x] **True blue noise.** Shipped. Void-and-cluster into a 64×64 tile, generated
-      lazily behind a getter on `ORD.blue.m` (~25ms).
-- [ ] **Web Worker for the dither pass.** Fixes the input lag at 800+ cell grids
-      with 12-tap kernels. Needs transferable ImageData and a cancellation token
-      so stale renders get dropped.
+- [x] **Effects stack.** Shipped, then made reorderable. `effects()` walks the
+      `FX` table in the order held by `#fxorder`; twelve passes including
+      chromatic aberration, JPEG glitch, waveform, pixel sort, slice shift and
+      vignette. All the random ones are seeded.
+- [x] **True blue noise.** Shipped. Void-and-cluster into 16², 32² and 64² tiles,
+      each generated lazily behind a getter (~25ms for the 64²).
+- [ ] **Web Worker for the dither pass.** Still open, but less urgent: dragging
+      now previews at a reduced grid and an over-budget render coalesces input,
+      which covers the felt lag. The settled render is still the full cost
+      (~265ms at 1200 cells with Jarvis). Needs transferable ImageData and a
+      cancellation token so stale renders get dropped.
 - [x] **SVG export with run-length merging.** Shipped. One `<path>` per colour with
       a subpath per horizontal run; ASCII mode emits `<text>` rows merged by colour.
 - [ ] **Region masking.** Different algorithms or palettes in different areas of
-      the image.
+      the image. The one substantial Dither Boy-adjacent idea still unbuilt.
+- [ ] **Ostromoukhov.** Variable-coefficient error diffusion, the best tone
+      reproduction available. Left out because its 256-row table could not be
+      verified from a reliable source — add it from one.
 - [ ] **Text panel virtualization.** 400-column braille output currently makes
       `#textout` sluggish.
 
@@ -47,7 +59,7 @@ Ordered roughly by value-to-effort.
 
 | Issue | Notes |
 |---|---|
-| Input lag on large grids | No worker, no throttle beyond rAF |
+| Input lag on large grids | Drag previews at a reduced grid and over-budget renders coalesce input; the settled render is still single-threaded |
 | Text panel slow at high column counts | No virtualization |
 | `stepGuess()` is a heuristic | Ordered spread on arbitrary colour palettes is approximate, not principled |
 | Non-monospace fonts break alignment | Font list is monospace-only, but a custom family could be forced in |
@@ -55,4 +67,6 @@ Ordered roughly by value-to-effort.
 | Clip encoding is single-threaded | Every frame runs the full pipeline on the main thread; long clips take a while. Progress bar + cancel cover it, a worker would fix it |
 | GIF uses one palette for the whole clip | Taken from the active palette, so per-frame optimal tables aren't attempted. Fine for dithered output, which is already quantized |
 | WebM export depends on `MediaRecorder` | Falls back to a toast where unsupported. Frame pacing is wall-clock, not exact |
-| Blue noise tile is regenerated per session | ~25ms, cached in memory. No storage means no persistence |
+| Blue noise tile is regenerated per session | ~25ms, cached in memory, now three tile sizes. No storage means no persistence |
+| CMYK separation is not colour-managed | Plain GCR with a slider. It is a look, not a proof |
+| Exotic charsets shear on the embedded fonts | The ramp block warns; it does not stop you |

@@ -192,6 +192,20 @@
   .cell:hover{background:var(--hover)}
   .cell[aria-pressed=true]{background:var(--tint); color:var(--accent); box-shadow:inset 0 0 0 1px var(--ring)}
 
+  /* effect stack: a .sld with reorder arrows beside it. The arrows are 4px-radius
+     chips-in-track sized, per the radius scale, and only tint on hover. */
+  .fxstack{display:flex; flex-direction:column; gap:10px}
+  .fxrow{display:flex; align-items:flex-end; gap:8px}
+  .fxrow > .sld{flex:1; min-width:0}
+  .fxrow.off > .sld > .lab{color:var(--t3)}
+  .fxmove{display:flex; flex-direction:column; gap:2px; padding-bottom:1px}
+  .fxmove button{
+    font:500 8px var(--mono); color:var(--t3); background:var(--fill);
+    border-radius:4px; padding:2px 5px; line-height:1.1;
+  }
+  .fxmove button:hover{background:var(--hover); color:var(--text)}
+  .fxmove button:disabled{opacity:.3}
+
   /* list rows (ramp picker, history, presets) */
   .rows{display:flex; flex-direction:column; gap:5px}
   .row{
@@ -545,6 +559,18 @@
           </div>
         </div>
 
+        <div class="blk hidden" id="blk-batch">
+          <button class="sec">Batch</button>
+          <div class="blkbody">
+            <div class="note" id="batchinfo"></div>
+            <div class="chips">
+              <button class="chip accent" id="batchgo" data-nobind>Export all as ZIP</button>
+              <button class="chip" id="batchclear" data-nobind>Clear queue</button>
+            </div>
+            <div class="note">Every queued image runs through the settings you have set now. Sizes can differ — the grid is in cells relative to each source, not pixels.</div>
+          </div>
+        </div>
+
         <div class="blk hidden" id="blk-video">
           <button class="sec">Clip</button>
           <div class="blkbody">
@@ -557,7 +583,22 @@
             <div class="sld"><span class="lab">Frame rate <b data-out="vfps">12</b> fps</span>
               <input type="range" id="vfps" min="1" max="30" value="12"></div>
             <label class="line"><span class="ll">Loop playback</span><input type="checkbox" class="tgl" id="vloop" checked></label>
-            <div class="note">Every frame runs the full pipeline. Export the clip as GIF, WebM or a PNG sequence from the export dialog.</div>
+            <label class="sld"><span class="lab">Temporal variation</span>
+              <select id="tvar">
+                <option value="off">Off — dither sits still</option>
+                <option value="noise">Noise — grain reshuffles</option>
+                <option value="drift">Drift — pattern slides right</option>
+                <option value="roll">Roll — pattern slides down</option>
+                <option value="diag">Diagonal — slides both ways</option>
+                <option value="spin">Spin — pattern orbits</option>
+                <option value="jitter">Jitter — random each frame</option>
+                <option value="pulse">Pulse — threshold breathes</option>
+                <option value="flicker">Flicker — exposure wavers</option>
+                <option value="sweep">Sweep — threshold ramps</option>
+              </select></label>
+            <div class="sld" id="wrap-tvamt"><span class="lab">Variation amount <b data-out="tvamt">40</b></span>
+              <input type="range" id="tvamt" min="0" max="100" value="40"></div>
+            <div class="note">Every frame runs the full pipeline. Temporal variation moves the dither between frames instead of letting a static pattern sit on a moving picture — it applies during playback and to every exported frame. Export as GIF, WebM or a PNG sequence from the export dialog.</div>
           </div>
         </div>
 
@@ -609,29 +650,26 @@
         <div class="blk closed" id="blk-fx">
           <button class="sec">Effects</button>
           <div class="blkbody">
-            <div class="sld"><span class="lab">Blur <b data-out="fxblur">0</b></span>
-              <input type="range" id="fxblur" min="0" max="4" value="0"></div>
-            <div class="sld"><span class="lab">Sharpen <b data-out="fxsharp">0</b></span>
-              <input type="range" id="fxsharp" min="0" max="100" value="0"></div>
-            <div class="sld"><span class="lab">Edge detect <b data-out="fxedge">0</b></span>
-              <input type="range" id="fxedge" min="0" max="100" value="0"></div>
-            <div class="sld"><span class="lab">Posterize <b data-out="fxpost">0</b></span>
-              <input type="range" id="fxpost" min="0" max="16" value="0"></div>
-            <div class="sld"><span class="lab">Bloom <b data-out="fxbloom">0</b></span>
-              <input type="range" id="fxbloom" min="0" max="100" value="0"></div>
-            <div class="sld"><span class="lab">Scanlines <b data-out="fxscan">0</b></span>
-              <input type="range" id="fxscan" min="0" max="100" value="0"></div>
-            <div class="note">Applied to the grid before dithering, in the order listed. 0 disables a pass.</div>
+            <div class="fxstack" id="fxstack"></div>
+            <input type="hidden" id="fxorder" value="">
+            <div class="sld"><span class="lab">Glitch seed <b data-out="fxseed">7</b></span>
+              <input type="range" id="fxseed" min="0" max="999" value="7"></div>
+            <div class="chips" style="margin-top:2px">
+              <button class="chip" id="fxreset" data-nobind>Reset order</button>
+            </div>
+            <div class="note">Applied to the grid before dithering, top to bottom. 0 disables a pass; the arrows reorder them. The seed fixes the random passes so the preview stops reshuffling on every keystroke.</div>
           </div>
         </div>
 
         <div class="blk" id="blk-dither">
           <button class="sec" id="sec-dither">Dither</button>
           <div class="blkbody">
+            <div class="line" id="wrap-gridquick"><span class="ll">Scale</span>
+              <div class="chips" id="gridquick"></div></div>
             <div class="sld" id="wrap-cols"><span class="lab">Grid width (cells) <b data-out="cols">160</b></span>
-              <input type="range" id="cols" min="16" max="900" value="160"></div>
+              <input type="range" id="cols" min="16" max="1200" value="160"></div>
             <div class="sld" id="wrap-cell"><span class="lab">Cell size (px) <b data-out="cell">4</b></span>
-              <input type="range" id="cell" min="1" max="24" value="4"></div>
+              <input type="range" id="cell" min="1" max="48" value="4"></div>
             <div class="sld" id="wrap-strength"><span class="lab">Diffusion strength <b data-out="strength">100</b></span>
               <input type="range" id="strength" min="0" max="150" value="100"></div>
             <div class="sld" id="wrap-spread"><span class="lab">Pattern spread <b data-out="spread">1.00</b></span>
@@ -639,6 +677,39 @@
             <div class="sld"><span class="lab">Threshold bias <b data-out="bias">0</b></span>
               <input type="range" id="bias" min="-100" max="100" value="0"></div>
             <label class="line" id="wrap-serp"><span class="ll">Serpentine scan</span><input type="checkbox" class="tgl" id="serp" checked></label>
+          </div>
+        </div>
+
+        <div class="blk hidden" id="blk-halftone">
+          <button class="sec">Halftone screen</button>
+          <div class="blkbody">
+            <label class="sld"><span class="lab">Dot shape</span>
+              <select id="htshape">
+                <option value="round">Round</option>
+                <option value="square">Square</option>
+                <option value="diamond">Diamond</option>
+                <option value="ellipse">Elliptical</option>
+                <option value="line">Line</option>
+                <option value="cross">Cross</option>
+              </select></label>
+            <div class="line"><span class="ll">Screen angle</span>
+              <div class="chips" id="htanglequick">
+                <button class="chip" data-a="0">0°</button><button class="chip" data-a="15">15°</button>
+                <button class="chip" data-a="45">45°</button><button class="chip" data-a="75">75°</button>
+              </div></div>
+            <div class="sld"><span class="lab">Angle <span><b data-out="htangle">45</b>°</span></span>
+              <input type="range" id="htangle" min="0" max="90" value="45"></div>
+            <div class="sld"><span class="lab">Ruling (cells per dot) <b data-out="htfreq">6</b></span>
+              <input type="range" id="htfreq" min="2" max="32" value="6"></div>
+            <div class="sld"><span class="lab">Black ink <span><b data-out="htink">120</b>%</span></span>
+              <input type="range" id="htink" min="0" max="200" value="120"></div>
+            <div class="sld"><span class="lab">Mid-tone gain <b data-out="htgain">0</b></span>
+              <input type="range" id="htgain" min="-100" max="100" value="0"></div>
+            <label class="line" id="wrap-cmyk"><span class="ll">CMYK separation</span>
+              <input type="checkbox" class="tgl" id="cmyk"></label>
+            <div class="sld hidden" id="wrap-ucr"><span class="lab">Black generation <span><b data-out="ucr">70</b>%</span></span>
+              <input type="range" id="ucr" min="0" max="100" value="70"></div>
+            <div class="note">Rotated screens do not tile, so this costs a little more than a fixed matrix. CMYK screens each channel at its own angle and multiplies the plates back together.</div>
           </div>
         </div>
 
@@ -653,6 +724,25 @@
             <select id="palette" aria-label="All palettes"></select>
             <div class="sld" id="wrap-levels"><span class="lab">Levels <b data-out="levels">2</b></span>
               <input type="range" id="levels" min="2" max="16" value="2"></div>
+            <div class="sld"><span class="lab">Depth <b data-out="depth">0</b></span>
+              <input type="range" id="depth" min="0" max="32" value="0"></div>
+            <label class="sld" id="wrap-palmap"><span class="lab">Colour mapping</span>
+              <select id="palmap">
+                <option value="rgb">Nearest colour</option>
+                <option value="luma">Tonal scale</option>
+              </select></label>
+            <label class="sld" id="wrap-rampcurve"><span class="lab">Tone curve</span>
+              <select id="rampcurve">
+                <option value="linear">Linear</option>
+                <option value="gamma">Gamma (lifted)</option>
+                <option value="scurve">S-curve</option>
+                <option value="film">Film</option>
+              </select></label>
+            <label class="sld"><span class="lab">Colour distance</span>
+              <select id="dist">
+                <option value="fast">Fast (weighted RGB)</option>
+                <option value="perceptual">Perceptual (Oklab)</option>
+              </select></label>
             <div class="chips" id="wrap-duo" style="gap:8px">
               <label class="sld" style="flex:1"><span class="lab">Dark</span><input type="color" id="c0" value="#141414"></label>
               <label class="sld" style="flex:1"><span class="lab">Light</span><input type="color" id="c1" value="#f4f1e8"></label>
@@ -691,7 +781,12 @@
             <label class="sld hidden" id="wrap-custom"><span class="lab">Custom ramp (dark → light)</span>
               <input type="text" id="custom" value="@%#*+=-:. "></label>
             <label class="line"><span class="ll">Invert ramp</span><input type="checkbox" class="tgl" id="rampinv"></label>
-            <div class="note">Braille packs a 2×4 dither grid into every character — highest detail per cell, and it copies as text.</div>
+            <div class="sld" id="wrap-cdepth"><span class="lab">Character depth <b data-out="cdepth">0</b></span>
+              <input type="range" id="cdepth" min="0" max="32" value="0"></div>
+            <div class="sld" id="wrap-choff"><span class="lab">Character offset <b data-out="choff">0</b></span>
+              <input type="range" id="choff" min="-100" max="100" value="0"></div>
+            <div class="note" id="rampwarn" style="color:var(--accent); display:none"></div>
+            <div class="note">Braille packs a 2×4 dither grid into every character — highest detail per cell, and it copies as text. <b>Depth</b> uses only the first N glyphs of the ramp (0 = all of them); <b>offset</b> slides the whole luminance-to-glyph mapping.</div>
           </div>
         </div>
 
@@ -740,7 +835,23 @@
           <div class="sec">Looks</div>
           <div class="blkbody">
             <div class="rows" id="presetlist"></div>
-            <div class="note">A look sets a handful of controls and leaves the rest of your setup alone.</div>
+            <div class="note">A look is applied over the defaults, so the same look always gives you the same picture.</div>
+          </div>
+        </div>
+        <div class="blk">
+          <div class="sec">Randomize</div>
+          <div class="blkbody">
+            <div class="chips">
+              <button class="chip accent" id="randomize">Surprise me</button>
+              <button class="chip" id="shuffleadj">Shuffle sliders</button>
+            </div>
+            <div class="line" style="margin-top:10px"><span class="ll">Keep</span>
+              <div class="chips">
+                <button class="chip" id="lockpal" data-nobind aria-pressed="false">Palette</button>
+                <button class="chip" id="lockalgo" data-nobind aria-pressed="false">Algorithm</button>
+                <button class="chip" id="lockscale" data-nobind aria-pressed="false">Scale</button>
+              </div></div>
+            <div class="note">Locked controls are left alone by both buttons. <b>Shuffle sliders</b> moves only the adjustments and leaves the structure where it is.</div>
           </div>
         </div>
         <div class="blk">
@@ -750,7 +861,12 @@
               <button class="chip" id="copycfg">Copy settings</button>
               <button class="chip" id="pastecfg">Paste settings</button>
             </div>
-            <div class="note">Settings travel as a JSON string, so you can keep looks in a notes file and paste them back. Nothing is written to browser storage.</div>
+            <div class="chips" style="margin-top:8px">
+              <button class="chip accent" id="savelook" data-nobind>Save this look</button>
+              <button class="chip" id="copypack" data-nobind>Copy pack</button>
+              <button class="chip" id="pastepack" data-nobind>Paste pack</button>
+            </div>
+            <div class="note">Settings travel as a JSON string, so you can keep looks in a notes file and paste them back. A <em>pack</em> carries several named looks at once. Nothing is written to browser storage.</div>
           </div>
         </div>
       </div>
@@ -851,6 +967,10 @@
           <button data-fmt="txt" aria-pressed="false">TXT</button>
           <button data-fmt="html" aria-pressed="false">HTML</button>
         </div>
+        <div class="sec hidden" id="fmt-batch-lab" style="margin:14px 0 9px">Batch</div>
+        <div class="fmt hidden" id="fmtbatch" style="grid-template-columns:1fr">
+          <button data-fmt="batch" aria-pressed="false">All queued images → ZIP</button>
+        </div>
         <div class="sec hidden" id="fmt-anim-lab" style="margin:14px 0 9px">Animation</div>
         <div class="fmt hidden" id="fmtanim" style="grid-template-columns:1fr 1fr 1fr">
           <button data-fmt="gif" aria-pressed="false">GIF</button>
@@ -864,15 +984,28 @@
         <div class="progtrack"><i id="progbar"></i></div>
       </div>
       <div style="display:flex; flex-direction:column; gap:12px">
-        <div class="line">
-          <span class="ll">Scale</span>
-          <div class="chips" id="scalequick">
-            <button class="chip" data-s="1">1×</button><button class="chip" data-s="2">2×</button>
-            <button class="chip" data-s="4">4×</button><button class="chip" data-s="8">8×</button>
+        <label class="sld" id="wrap-sizemode"><span class="lab">Size</span>
+          <select id="sizemode">
+            <option value="multiplier">Multiply the cell size</option>
+            <option value="longedge">Fit a long edge</option>
+            <option value="preset">Fit a standard size</option>
+          </select></label>
+        <div id="wrap-mult">
+          <div class="line">
+            <span class="ll">Scale</span>
+            <div class="chips" id="scalequick">
+              <button class="chip" data-s="1">1×</button><button class="chip" data-s="2">2×</button>
+              <button class="chip" data-s="4">4×</button><button class="chip" data-s="8">8×</button>
+              <button class="chip" data-s="16">16×</button>
+            </div>
           </div>
+          <div class="sld" style="margin-top:12px"><span class="lab">Export scale <span><b data-out="oscale">1</b>×</span></span>
+            <input type="range" id="oscale" min="1" max="16" value="1"></div>
         </div>
-        <div class="sld"><span class="lab">Export scale <span><b data-out="oscale">1</b>×</span></span>
-          <input type="range" id="oscale" min="1" max="8" value="1"></div>
+        <label class="sld hidden" id="wrap-targetpx"><span class="lab">Long edge (px)</span>
+          <input type="number" id="targetpx" min="64" max="8192" step="1" value="2048"></label>
+        <label class="sld hidden" id="wrap-sizepreset"><span class="lab">Standard size</span>
+          <select id="sizepreset"></select></label>
         <label class="line" id="wrap-atrans"><span class="ll">Transparent background</span>
           <input type="checkbox" class="tgl" id="atrans"></label>
         <label class="line"><span class="ll">Copy to clipboard instead</span>
@@ -907,8 +1040,18 @@ const ED = {
   sierra2: {n:"Sierra (2 row)",       m:[[1,0,4],[2,0,3],[-2,1,1],[-1,1,2],[0,1,3],[1,1,2],[2,1,1]], d:16},
   sierraL: {n:"Sierra Lite",          m:[[1,0,2],[-1,1,1],[0,1,1]], d:4},
   stevenson:{n:"Stevenson–Arce",      m:[[2,0,32],[-3,1,12],[-1,1,26],[1,1,30],[3,1,16],[-2,2,12],[0,2,26],[2,2,12],[-3,3,5],[-1,3,12],[1,3,12],[3,3,5]], d:200},
+  fan:     {n:"Fan",                  m:[[1,0,7],[-2,1,1],[-1,1,3],[0,1,5]], d:16},
+  shiaufan:{n:"Shiau–Fan",            m:[[1,0,4],[-2,1,1],[-1,1,1],[0,1,2]], d:8},
+  shiaufan2:{n:"Shiau–Fan 2",         m:[[1,0,8],[-3,1,1],[-2,1,1],[-1,1,2],[0,1,4]], d:16},
+  atkinson6:{n:"Atkinson (full error)",m:[[1,0,1],[2,0,1],[-1,1,1],[0,1,1],[1,1,1],[0,2,1]], d:6},
+  burkeslite:{n:"Burkes Lite",        m:[[1,0,4],[-1,1,2],[0,1,2]], d:8},
+  pigeon:  {n:"Pigeon",               m:[[1,0,2],[2,0,1],[-1,1,2],[0,1,2],[1,1,2],[-2,2,1],[0,2,1],[2,2,1]], d:12},
+  riemersma:{n:"Riemersma (Hilbert)", curve:true},
   smear:   {n:"Smear (all right)",    m:[[1,0,1]], d:1},
   fall:    {n:"Fall (all down)",      m:[[0,1,1]], d:1},
+  diagdrift:{n:"Diagonal drift",      m:[[1,0,1],[1,1,1]], d:2},
+  updown:  {n:"Vertical smear",       m:[[0,1,3],[0,2,1]], d:4},
+  split:   {n:"Split (left & right)", m:[[1,0,1],[-1,1,1]], d:2},
 };
 
 function bayer(n){ // n = 2,4,8,16
@@ -925,6 +1068,22 @@ function bayer(n){ // n = 2,4,8,16
   return m;
 }
 function normMat(m){ const s=m.length*m[0].length; return m.map(r=>r.map(v=>(v+0.5)/s)); }
+
+/* Rank every cell of an n×n grid by f() and number them 0…n²-1 in that order.
+   Ranking rather than hand-typing guarantees what the matrices have to be:
+   every threshold distinct, none repeated, the full range covered. Most of the
+   patterned screens below are one line because of it. */
+function rankMat(n, f){
+  const cells = [];
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++) cells.push({x, y, k:f(x, y, n)});
+  cells.sort((p,q)=>p.k-q.k);
+  const m = Array.from({length:n}, ()=>new Array(n));
+  cells.forEach((p,i)=>{ m[p.y][p.x]=i; });
+  return m;
+}
+const cdist = (x,y,n) => { const c=(n-1)/2; return Math.hypot(x-c, y-c) + Math.atan2(y-c, x-c)*1e-6; };
+// a deterministic hash, so the "mezzotint" screen is the same every session
+const hash2 = (x,y) => { let s=(x*374761393 + y*668265263) >>> 0; s=(s^(s>>>13))*1274126177>>>0; return (s^(s>>>16))/4294967296; };
 
 const CLUSTER4 = [[12,5,6,13],[4,0,1,7],[11,3,2,8],[15,10,9,14]];
 const CLUSTER8 = [
@@ -946,19 +1105,80 @@ const ORD = {
   bayer4:{n:"Bayer 4×4", m:normMat(bayer(4))},
   bayer8:{n:"Bayer 8×8", m:normMat(bayer(8))},
   bayer16:{n:"Bayer 16×16", m:normMat(bayer(16))},
+  bayer32:{n:"Bayer 32×32", m:normMat(bayer(32))},
   cluster4:{n:"Clustered dot 4×4", m:normMat(CLUSTER4)},
+  cluster6:{n:"Clustered dot 6×6", m:normMat(rankMat(6, cdist))},
+  cluster16:{n:"Clustered dot 16×16", m:normMat(rankMat(16, cdist))},
   halftone8:{n:"Halftone 8×8", m:normMat(CLUSTER8)},
+  spiral8:{n:"Spiral 8×8", m:normMat(rankMat(8,(x,y,n)=>{
+    const c=(n-1)/2; let a=Math.atan2(y-c,x-c); if(a<0) a+=Math.PI*2;
+    return a + Math.hypot(x-c,y-c)*0.9;
+  }))},
+  cross8:{n:"Cross-hatch 8×8", m:normMat(rankMat(8,(x,y,n)=>
+    Math.min(Math.abs((x%n)-n/2), Math.abs((y%n)-n/2)) + hash2(x,y)*0.4))},
+  mezzo:{n:"Mezzotint 8×8", m:normMat(rankMat(8, hash2))},
+  magic3:{n:"Magic square 3×3", m:normMat([[7,0,5],[2,4,6],[3,8,1]])},
   hline:{n:"Horizontal lines", m:normMat(HLINE)},
   vline:{n:"Vertical lines", m:normMat(VLINE)},
   diag:{n:"Diagonal 45°", m:normMat(DIAG)},
   check:{n:"Checkerboard", m:normMat(CHECK)},
+  screen:{n:"Halftone screen (adjustable)"},
   ign:{n:"Interleaved gradient", fn:(x,y)=>{
     const v = 52.9829189 * (0.06711056*x + 0.00583715*y);
     return v - Math.floor(v);
   }},
+  blue16:{n:"Blue noise 16×16"},
+  blue32:{n:"Blue noise 32×32"},
   blue:{n:"Blue noise 64×64"},
+  /* modulation — the threshold is a function of position rather than a tile.
+     Everything here is free: `fn` already existed for `ign` and `white`. */
+  sine:{n:"Sine wave", fn:(x,y)=>0.5+0.49*Math.sin(x*0.35 + Math.sin(y*0.12)*3)},
+  rings:{n:"Concentric rings", fn:(x,y,w,h)=>(Math.hypot(x-w/2, y-h/2)*0.3)%1},
+  spiralmod:{n:"Spiral sweep", fn:(x,y,w,h)=>{
+    const a=Math.atan2(y-h/2, x-w/2), d=Math.hypot(x-w/2, y-h/2);
+    return ((a/(Math.PI*2)*4 + d*0.25)%1 + 1)%1;
+  }},
+  plasma:{n:"Plasma", fn:(x,y)=>0.5 + 0.24*(Math.sin(x*0.9)+Math.sin(y*0.77))},
+  weave:{n:"Weave", fn:(x,y)=>(((x>>2)+(y>>2))&1) ? ((x%8)+0.5)/8 : ((y%8)+0.5)/8},
+  moire:{n:"Moiré", fn:(x,y,w,h)=>(
+    (Math.hypot(x-w*0.35, y-h/2)*0.4)%1 + (Math.hypot(x-w*0.65, y-h/2)*0.4)%1)/2},
   white:{n:"White noise", fn:()=>Math.random()},
   none:{n:"Threshold (no dither)", fn:()=>0.5},
+};
+
+/* ---------- halftone screen ----------
+   One parametric screen in place of a drawer full of fixed matrices. Because a
+   rotated screen does not tile on an integer grid, this is a threshold
+   *function*, not a matrix — which is why `make()` exists: it reads the five
+   controls once per render and bakes them into a closure, instead of hitting
+   the DOM inside the pixel loop.
+
+   Shape functions map a position within one screen cell, u,v ∈ [-1,1], to a
+   threshold that is 0 at the dot centre and 1 at the far corner. Low threshold
+   means ink, so the dot grows outwards from the centre as the tone darkens. */
+const HT_SHAPES = {
+  round:   (u,v)=>Math.hypot(u,v)/Math.SQRT2,
+  square:  (u,v)=>Math.max(Math.abs(u), Math.abs(v)),
+  diamond: (u,v)=>(Math.abs(u)+Math.abs(v))/2,
+  ellipse: (u,v)=>Math.hypot(u*1.4, v*0.7)/Math.SQRT2,
+  line:    (u,v)=>Math.abs(v),
+  cross:   (u,v)=>Math.min(Math.abs(u), Math.abs(v))*2,
+};
+ORD.screen.make = function(w, h, angleDeg){
+  const ang = (angleDeg === undefined ? num('htangle') : angleDeg)*Math.PI/180;
+  const freq = Math.max(2, num('htfreq'));
+  const ink = num('htink')/100;
+  const gain = num('htgain')/100;
+  const shape = HT_SHAPES[v('htshape')] || HT_SHAPES.round;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  return (x, y)=>{
+    const rx = (x*ca + y*sa)/freq, ry = (y*ca - x*sa)/freq;
+    const u = (rx - Math.floor(rx))*2 - 1, vv = (ry - Math.floor(ry))*2 - 1;
+    let t = Math.min(1, shape(u, vv) / Math.max(0.01, ink));
+    // dot gain: bend the tone curve the way ink spreading does on real paper
+    if(gain) t = Math.pow(t, gain>0 ? 1-gain*0.6 : 1+(-gain)*1.5);
+    return t*0.98 + 0.01;
+  };
 };
 
 /* ---------- blue noise ----------
@@ -1024,11 +1244,61 @@ function blueNoiseTile(N){
   for(let y=0;y<N;y++){ const row=[]; for(let x=0;x<N;x++) row.push(rank[y*N+x]); m.push(row); }
   return normMat(m);
 }
-let _blueTile = null;
-Object.defineProperty(ORD.blue, 'm', {
-  configurable:true,
-  get(){ if(!_blueTile) _blueTile = blueNoiseTile(64); return _blueTile; },
+const _blueTiles = {};
+[['blue16',16], ['blue32',32], ['blue',64]].forEach(([k,N])=>{
+  Object.defineProperty(ORD[k], 'm', {
+    configurable:true,
+    get(){ if(!_blueTiles[N]) _blueTiles[N] = blueNoiseTile(N); return _blueTiles[N]; },
+  });
 });
+
+/* ---------- Hilbert curve (Riemersma) ----------
+   Error diffusion along a space-filling curve rather than in scan order. Every
+   step of the curve is adjacent to the last, so the error never has to be split
+   across a 2D kernel — it goes into a decaying queue instead. The pay-off is
+   that there is no scan direction to leave an artefact: no worms, no streaks,
+   no serpentine seam. Hence no kernel and no `serp` for this one. */
+function d2xy(n, d){
+  let rx, ry, t=d, x=0, y=0;
+  for(let s=1; s<n; s*=2){
+    rx = 1 & (t >> 1);
+    ry = 1 & (t ^ rx);
+    if(ry === 0){
+      if(rx === 1){ x = s-1-x; y = s-1-y; }
+      const tmp = x; x = y; y = tmp;
+    }
+    x += s*rx; y += s*ry;
+    t >>= 2;
+  }
+  return [x, y];
+}
+function riemersmaDither(d, w, h, pal, opts){
+  const L = 16, RATIO = 16;           // queue length and oldest:newest weighting
+  const wt = new Float32Array(L);
+  let tot = 0;
+  for(let i=0;i<L;i++){ wt[i] = Math.pow(RATIO, i/(L-1)); tot += wt[i]; }
+  for(let i=0;i<L;i++) wt[i] /= tot;  // wt[L-1] is the most recent pixel
+  // the curve needs a power-of-two square; cells outside the grid are skipped
+  let n = 1; while(n < Math.max(w,h)) n <<= 1;
+  const a = d.data, str = opts.strength, bias = opts.bias;
+  const qr = new Float32Array(L), qg = new Float32Array(L), qb = new Float32Array(L);
+  let qi = 0;
+  for(let s=0; s<n*n; s++){
+    const [x,y] = d2xy(n, s);
+    if(x >= w || y >= h) continue;
+    let er=0, eg=0, eb=0;
+    for(let k=0;k<L;k++){
+      const j = (qi+k) % L;           // qi is the oldest slot, so k ascends in age
+      er += qr[j]*wt[k]; eg += qg[j]*wt[k]; eb += qb[j]*wt[k];
+    }
+    const i = (y*w+x)*4;
+    const sr = a[i]+er+bias, sg = a[i+1]+eg+bias, sb = a[i+2]+eb+bias;
+    const c = nearest(pal, sr, sg, sb);
+    a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
+    qr[qi]=(sr-c[0])*str; qg[qi]=(sg-c[1])*str; qb[qi]=(sb-c[2])*str;
+    qi = (qi+1) % L;
+  }
+}
 
 /* ---------- algorithm copy ----------
    fs / atkinson / bayer8 are the designer's verbatim strings from the handoff.
@@ -1044,70 +1314,166 @@ const ALGO_INFO = {
   'ed:sierra2':{b:"The two-row cut of Sierra.", p:"Faster than the full kernel, still smooth.", c:"Less shadow separation.", f:"mid-size grids"},
   'ed:sierraL':{b:"Three taps — the least that still reads as diffusion.", p:"Very fast; comfortable on huge grids.", c:"Visible diagonal texture.", f:"live scrubbing"},
   'ed:stevenson':{b:"A wide, sparse kernel built for hex-packed output.", p:"Unusual organic grain with no obvious grid.", c:"Needs a large grid or it just reads as noise.", f:"large prints, texture"},
+  'ed:fan':{b:"Floyd–Steinberg with its error pulled back to the left.", p:"Fewer worms than the original at the same cost.", c:"Slight leftward lean in flat tone.", f:"photos, general use"},
+  'ed:shiaufan':{b:"A four-tap kernel designed specifically against worming.", p:"Clean flat areas; cheap.", c:"Coarser gradients than Stucki.", f:"large flat tone"},
+  'ed:shiaufan2':{b:"The wider Shiau–Fan, reaching three pixels left.", p:"Smoother than its smaller sibling, still worm-free.", c:"Softens fine vertical detail.", f:"portraits, skies"},
+  'ed:atkinson6':{b:"Atkinson's taps, but diffusing all of the error.", p:"Atkinson's crispness without the blown highlights.", c:"Loses the authentic old-Mac contrast.", f:"when Atkinson clips too hard"},
+  'ed:burkeslite':{b:"Three taps cut down from Burkes.", p:"Very fast; holds up on huge grids.", c:"Visible horizontal texture.", f:"live scrubbing, big grids"},
+  'ed:pigeon':{b:"A wide, low-weight kernel that spreads error thinly.", p:"Soft, even grain with little directional bias.", c:"Washes out very fine detail.", f:"soft photographic looks"},
+  'ed:riemersma':{b:"Diffuses along a Hilbert curve instead of in scan order.", p:"No worms, no streaks, no scan direction at all — the most artefact-free option here.", c:"Grain is coarser than Floyd–Steinberg; ignores the serpentine setting.", f:"photographs, print, anything where kernel artefacts show"},
   'ed:smear':{b:"Pushes the entire error into the next pixel.", p:"Long horizontal streaks — a deliberate glitch.", c:"Not a faithful reproduction of anything.", f:"glitch, motion looks"},
   'ed:fall':{b:"Pushes the entire error straight down.", p:"Vertical, rain-like streaking.", c:"An effect, not a reproduction.", f:"glitch, poster texture"},
+  'ed:diagdrift':{b:"Splits the error between right and down-right.", p:"Diagonal comet trails off every edge.", c:"Tone drifts badly; purely an effect.", f:"glitch, motion streaks"},
+  'ed:updown':{b:"Sends everything two rows down, weighted to the first.", p:"Long vertical drips.", c:"Loses horizontal structure entirely.", f:"melt and drip looks"},
+  'ed:split':{b:"Half the error right, half down-left.", p:"Torn, interlaced break-up.", c:"No tonal fidelity at all.", f:"heavy glitch"},
+
   'ord:bayer2':{b:"The smallest ordered matrix — four thresholds.", p:"Extremely coarse, unmistakably digital.", c:"Only four tones; heavy patterning.", f:"chunky 1-bit looks"},
   'ord:bayer4':{b:"Sixteen ordered thresholds in a tileable grid.", p:"Fast, deterministic, classic retro texture.", c:"Obvious cross-hatch on flat tone.", f:"game art, sprites"},
   'ord:bayer8':{b:"Ordered threshold matrix — a fixed, tileable grid.", p:"Fast, deterministic, tiles seamlessly.", c:"Visible cross-hatch pattern at low densities.", f:"textures, backgrounds, print"},
   'ord:bayer16':{b:"256 thresholds — the finest Bayer grid.", p:"Nearly continuous tone, still perfectly tileable.", c:"Pattern goes faint; wants a big grid to read.", f:"large flat gradients"},
+  'ord:bayer32':{b:"1024 thresholds — Bayer taken as far as it goes.", p:"Effectively continuous tone from an ordered matrix.", c:"The pattern all but disappears; use 8×8 if you want to see it.", f:"very large flat gradients"},
   'ord:cluster4':{b:"Grows dots outward from a centre, like a print screen.", p:"Survives low-resolution printing.", c:"Loses fine detail; coarse at small cell sizes.", f:"newsprint, risograph"},
+  'ord:cluster6':{b:"A slightly finer clustered dot than the 4×4.", p:"More tonal steps while still reading as a print screen.", c:"Wants a cell size of 3 or more.", f:"risograph, poster print"},
+  'ord:cluster16':{b:"A large clustered dot with 256 steps.", p:"Smooth print-screen tone; very few visible jumps.", c:"Dots get big — needs a large grid to hold detail.", f:"large-format print"},
+  'ord:spiral8':{b:"Thresholds wound outwards in a spiral.", p:"Dots grow with a twist instead of concentrically.", c:"Strong rotational texture on flat tone.", f:"decorative, pattern work"},
+  'ord:cross8':{b:"A woven cross-hatch of horizontal and vertical runs.", p:"Reads like engraved cross-hatching.", c:"Busy; competes with fine detail.", f:"etching and engraving looks"},
+  'ord:mezzo':{b:"A fixed random ordering — white noise, but deterministic.", p:"Clumped organic grain that never changes between renders.", c:"Clumps the way white noise does; blue noise is cleaner.", f:"mezzotint, aquatint textures"},
+  'ord:magic3':{b:"A 3×3 magic square used as a threshold matrix.", p:"Odd-sized tile, so it fights the pixel grid instead of reinforcing it.", c:"Only nine tones.", f:"coarse, irregular texture"},
+  'ord:screen':{b:"A rotatable halftone screen with an adjustable dot.", p:"Shape, angle, ruling, ink weight and dot gain are all controls — one screen instead of a drawer of fixed ones.", c:"Rotated screens do not tile, so it costs a little more than a matrix.", f:"print work, CMYK separations, poster halftones"},
   'ord:halftone8':{b:"A proper rotated halftone screen.", p:"Reads as classic print halftone.", c:"Eats detail; wants a large cell size.", f:"posters, print pastiche"},
   'ord:hline':{b:"Thresholds arranged into scanlines.", p:"Instant CRT / venetian-blind texture.", c:"Destroys horizontal detail.", f:"CRT and scanline looks"},
   'ord:vline':{b:"Scanlines, rotated a quarter turn.", p:"Strong vertical rhythm; good under type.", c:"Destroys vertical detail.", f:"editorial, column textures"},
   'ord:diag':{b:"A 45° line screen.", p:"Engraving-like hatch that hides the pixel grid.", c:"Strong directional bias.", f:"etching, hatch looks"},
   'ord:check':{b:"Two thresholds, alternating.", p:"Pure 50% dither — the crispest texture available.", c:"Only one intermediate tone.", f:"1-bit UI, icons"},
   'ord:ign':{b:"A hash-based threshold borrowed from real-time graphics.", p:"Fine, even grain with no visible tiling.", c:"Can shimmer when the grid size changes.", f:"smooth shading"},
+  'ord:blue16':{b:"A 16² void-and-cluster tile — blue noise at a coarse scale.", p:"Chunky organic grain; builds instantly.", c:"The tile repeat is visible on large flat areas.", f:"coarse grain, small grids"},
+  'ord:blue32':{b:"A 32² void-and-cluster tile.", p:"The middle ground — organic, and quick to build.", c:"Faint tiling on very large flat areas.", f:"general photographic use"},
   'ord:blue':{b:"A void-and-cluster mask with no low-frequency energy.", p:"Organic grain, no repeating pattern, no cross-hatch.", c:"Softer edges; the 64² tile takes a moment to build the first time.", f:"film-grain looks, photographs"},
+  'ord:sine':{b:"The threshold rides a sine wave that itself wobbles.", p:"Ripples and interference bands through the tone.", c:"Imposes its own rhythm over the image's structure.", f:"wave and moiré looks"},
+  'ord:rings':{b:"Concentric rings radiating from the centre of the grid.", p:"Instant target and ripple patterns.", c:"Anchored to the frame, not the subject.", f:"poster graphics, op-art"},
+  'ord:spiralmod':{b:"A four-armed spiral sweeping out from the centre.", p:"Rotational pull that a tiled matrix cannot produce.", c:"Very strong; overwhelms a busy image.", f:"hypnotic, decorative work"},
+  'ord:plasma':{b:"Two crossed sine fields, the classic demo-scene plasma.", p:"Soft irregular blotching with no grid at all.", c:"Tone response is gently S-curved rather than linear.", f:"organic texture, backgrounds"},
+  'ord:weave':{b:"Alternating blocks of horizontal and vertical ramps.", p:"Reads as woven cloth or basketwork.", c:"The 4-pixel block is obvious at small cell sizes.", f:"textile and pattern looks"},
+  'ord:moire':{b:"Two ring fields offset from each other, beating against each other.", p:"Genuine moiré interference, not a fake of it.", c:"Anchored to the frame; heavy at small grids.", f:"interference and op-art looks"},
   'ord:white':{b:"A fresh random threshold at every pixel.", p:"Cheap, and unmistakably noisy.", c:"Clumps badly — blue noise is almost always the better choice.", f:"heavy grain, glitch"},
   'ord:none':{b:"No dithering — a straight cut at the threshold.", p:"Maximum contrast; clean silhouettes.", c:"Hard banding, no tonal information.", f:"logos, stencils"},
 };
 
-/* ---------- palettes ---------- */
+/* ---------- palettes ----------
+   Credits: Sweetie 16 by GrafxKid; PICO-8 by Lexaloffle; Solarized by Ethan
+   Schoonover. Hardware palettes are the documented values where those are
+   unambiguous. Anything named "-ish" is an approximation tuned by eye rather
+   than a claim about the original hardware — several of these machines had no
+   single correct RGB set to begin with. */
 const hexes = s => s.trim().split(/\s+/).map(h=>{
   const v = parseInt(h.replace('#',''),16);
   return [(v>>16)&255,(v>>8)&255,v&255];
 });
+// build an even ramp between hex stops, for the photographic tone scales
+const ramp2 = (a, b, n) => {
+  const A=hexes(a)[0], B=hexes(b)[0], out=[];
+  for(let i=0;i<n;i++){ const t=i/(n-1); out.push([0,1,2].map(j=>Math.round(A[j]+(B[j]-A[j])*t))); }
+  return out;
+};
 const PALETTES = {
-  duo:      {n:"Two-tone (custom)", duo:true},
-  gray:     {n:"Grayscale ramp", ramp:true},
-  gameboy:  {n:"Game Boy DMG", c:hexes("0f380f 306230 8bac0f 9bbc0f")},
-  gbpocket: {n:"Game Boy Pocket", c:hexes("081820 346856 88c070 e0f8d0")},
-  cga:      {n:"CGA mode 4", c:hexes("000000 55ffff ff55ff ffffff")},
-  cga16:    {n:"CGA 16", c:hexes("000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff")},
-  c64:      {n:"Commodore 64", c:hexes("000000 ffffff 880000 aaffee cc44cc 00cc55 0000aa eeee77 dd8855 664400 ff7777 333333 777777 aaff66 0088ff bbbbbb")},
-  pico8:    {n:"PICO-8", c:hexes("000000 1d2b53 7e2553 008751 ab5236 5f574f c2c3c7 fff1e8 ff004d ffa300 ffec27 00e436 29adff 83769c ff77a8 ffccaa")},
-  sweetie:  {n:"Sweetie 16", c:hexes("1a1c2c 5d275d b13e53 ef7d57 ffcd75 a7f070 38b764 257179 29366f 3b5dc9 41a6f6 73eff7 f4f4f4 94b0c2 566c86 333c57")},
-  nes:      {n:"NES-ish", c:hexes("000000 fcfcfc bcbcbc 7c7c7c f8b800 f83800 e40058 8800f8 0058f8 00b800 58f898 00e8d8")},
-  amber:    {n:"Amber CRT", c:hexes("120b00 4a2c00 a35f00 ffb000 ffd88a")},
-  green:    {n:"Green CRT", c:hexes("001200 004b1e 00a63c 33ff66 aaffcc")},
-  paper:    {n:"Newsprint", c:hexes("1b1a17 4a463d 8c8578 c9c2b2 f2ede1")},
-  riso:     {n:"Riso duo (blue/amber)", c:hexes("0f1120 2b3a8c 7aa2ff ffb347 fff3d6 f6f4ee")},
-  solar:    {n:"Solarized", c:hexes("002b36 073642 586e75 657b83 839496 93a1a1 eee8d5 fdf6e3 b58900 cb4b16 dc322f d33682 6c71c4 268bd2 2aa198 859900")},
-  custom:   {n:"Extracted from image", extracted:true},
+  duo:      {n:"Two-tone (custom)", duo:true, g:"Basic"},
+  gray:     {n:"Grayscale ramp", ramp:true, g:"Basic"},
+  custom:   {n:"Extracted from image", extracted:true, g:"Basic"},
+
+  gameboy:  {n:"Game Boy DMG", g:"Hardware", c:hexes("0f380f 306230 8bac0f 9bbc0f")},
+  gbpocket: {n:"Game Boy Pocket", g:"Hardware", c:hexes("081820 346856 88c070 e0f8d0")},
+  cga:      {n:"CGA mode 4", g:"Hardware", c:hexes("000000 55ffff ff55ff ffffff")},
+  cga16:    {n:"CGA / EGA 16", g:"Hardware", c:hexes("000000 0000aa 00aa00 00aaaa aa0000 aa00aa aa5500 aaaaaa 555555 5555ff 55ff55 55ffff ff5555 ff55ff ffff55 ffffff")},
+  win16:    {n:"Windows 16", g:"Hardware", c:hexes("000000 800000 008000 808000 000080 800080 008080 c0c0c0 808080 ff0000 00ff00 ffff00 0000ff ff00ff 00ffff ffffff")},
+  c64:      {n:"Commodore 64", g:"Hardware", c:hexes("000000 ffffff 880000 aaffee cc44cc 00cc55 0000aa eeee77 dd8855 664400 ff7777 333333 777777 aaff66 0088ff bbbbbb")},
+  spectrum: {n:"ZX Spectrum", g:"Hardware", c:hexes("000000 0000d7 d70000 d700d7 00d700 00d7d7 d7d700 d7d7d7 0000ff ff0000 ff00ff 00ff00 00ffff ffff00 ffffff")},
+  msx:      {n:"MSX / TMS9918-ish", g:"Hardware", c:hexes("000000 3eb849 74d07d 5955e0 8076f1 b95e51 65dbef db6559 ff897d ccc35e ded087 3aa241 b766b5 cccccc ffffff")},
+  apple2:   {n:"Apple II hi-res-ish", g:"Hardware", c:hexes("000000 20c000 a000e0 0080ff f05000 ffffff")},
+  teletext: {n:"Teletext 8", g:"Hardware", c:hexes("000000 ff0000 00ff00 ffff00 0000ff ff00ff 00ffff ffffff")},
+  pico8:    {n:"PICO-8", g:"Hardware", c:hexes("000000 1d2b53 7e2553 008751 ab5236 5f574f c2c3c7 fff1e8 ff004d ffa300 ffec27 00e436 29adff 83769c ff77a8 ffccaa")},
+  nes:      {n:"NES-ish", g:"Hardware", c:hexes("000000 fcfcfc bcbcbc 7c7c7c f8b800 f83800 e40058 8800f8 0058f8 00b800 58f898 00e8d8")},
+  vboy:     {n:"Virtual Boy", g:"Hardware", c:hexes("000000 550000 aa0000 ff0000")},
+  nokia:    {n:"Nokia 3310", g:"Hardware", c:hexes("43523d c7f0d8")},
+  mac1bit:  {n:"Macintosh 1-bit", g:"Hardware", c:hexes("000000 ffffff")},
+  obradinn: {n:"Obra Dinn-ish", g:"Hardware", c:hexes("2b2f3b ebe5ce")},
+
+  amber:    {n:"Amber CRT", g:"Screen", c:hexes("120b00 4a2c00 a35f00 ffb000 ffd88a")},
+  green:    {n:"Green CRT", g:"Screen", c:hexes("001200 004b1e 00a63c 33ff66 aaffcc")},
+  vapor:    {n:"Vaporwave", g:"Screen", c:hexes("1a0033 ff71ce b967ff 01cdfe 05ffa1 fffb96")},
+  cyber:    {n:"Cyberpunk neon", g:"Screen", c:hexes("01012b 0d0221 261447 ff2a6d 05d9e8 d1f7ff")},
+  ice:      {n:"Ice", g:"Screen", c:hexes("06111f 123a5c 2e7ba6 76c4dd bfe9f5 f2fbff")},
+  rust:     {n:"Rust & ash", g:"Screen", c:hexes("1a1512 3d2b1f 7a4522 b8682c e0a05a f0ddc0")},
+
+  paper:    {n:"Newsprint", g:"Print", c:hexes("1b1a17 4a463d 8c8578 c9c2b2 f2ede1")},
+  riso:     {n:"Riso duo (blue/amber)", g:"Print", c:hexes("0f1120 2b3a8c 7aa2ff ffb347 fff3d6 f6f4ee")},
+  risofluo: {n:"Riso fluorescent", g:"Print", c:hexes("111111 ff48b0 0078bf ffe800 00a95c ffffff")},
+  cmykpal:  {n:"CMYK plates", g:"Print", c:hexes("000000 00ffff ff00ff ffff00 ffffff")},
+  duoblor:  {n:"Duotone blue / orange", g:"Print", c:hexes("0a1a2f 173c63 3f7ca6 c98a3c f0c07a fdf4e3")},
+  duopkteal:{n:"Duotone pink / teal", g:"Print", c:hexes("14262b 1f5c63 3fa6a0 e0669a f2a3c0 fdeef4")},
+  cyanotype:{n:"Cyanotype", g:"Print", c:hexes("0b1c33 143a63 2f6ea3 8fb9d8 e8f1f7")},
+
+  sepia:    {n:"Sepia 6", g:"Photographic", c:ramp2("1e1408","f4e6cd",6)},
+  selenium: {n:"Selenium 6", g:"Photographic", c:ramp2("14121c","efeef4",6)},
+  platinum: {n:"Platinum 8", g:"Photographic", c:ramp2("221c14","f2ece0",8)},
+  warmgray: {n:"Warm gray 8", g:"Photographic", c:ramp2("1a1815","f2efe9",8)},
+  coolgray: {n:"Cool gray 8", g:"Photographic", c:ramp2("15181a","e9eef2",8)},
+
+  sweetie:  {n:"Sweetie 16", g:"Art", c:hexes("1a1c2c 5d275d b13e53 ef7d57 ffcd75 a7f070 38b764 257179 29366f 3b5dc9 41a6f6 73eff7 f4f4f4 94b0c2 566c86 333c57")},
+  solar:    {n:"Solarized", g:"Art", c:hexes("002b36 073642 586e75 657b83 839496 93a1a1 eee8d5 fdf6e3 b58900 cb4b16 dc322f d33682 6c71c4 268bd2 2aa198 859900")},
 };
 // the five swatches surfaced above the full list
 const PAL_QUICK = ['duo','gray','gameboy','paper','green'];
 
-/* ---------- charsets ---------- */
+/* ---------- charsets ----------
+   Ordered densest-first; every ramp must end with a space.
+
+   `u:true` marks a set that needs glyphs the two embedded faces do not carry —
+   they are latin-only. Those sets render through whatever the browser
+   substitutes, and a substituted glyph rarely has the same advance width, which
+   shears the character grid. `gridSafe()` in the font picker measures for this
+   and the ramp block warns when the active font cannot hold the set. */
 const CHARSETS = {
-  classic:  {n:"Classic ASCII", s:"@%#*+=-:. "},
-  dense:    {n:"Dense 70-step", s:"$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "},
-  blocks:   {n:"Block shades", s:"█▓▒░ "},
-  half:     {n:"Block mix", s:"█▀▄▌▐░· "},
-  braille:  {n:"Braille (2×4 dots)", braille:true},
-  numeric:  {n:"Numeric", s:"98765432 "},
-  binary:   {n:"Binary", s:"10 "},
-  hex:      {n:"Hexadecimal", s:"FEDCBA9876543210 "},
-  symbols:  {n:"Symbols", s:"@#$%&*+=;:,. "},
-  geometric:{n:"Geometric", s:"◼◙◚▣▤▥▦▧▨▩◇○◌· "},
-  circles:  {n:"Dots & circles", s:"●◕◑◔○◦· "},
-  cards:    {n:"Cards & pips", s:"♠♣♥♦♢♡· "},
-  katakana: {n:"Katakana", s:"驫麤鑿龍籠襲鷹鴉夜雨爪ハ二丶ミ・ "},
-  arrows:   {n:"Arrows", s:"▓▒░◤◥◣◢↑↓←→· "},
-  thin:     {n:"Hairline", s:"▮▊▌▎│┃╎ⵊ˙ "},
-  runes:    {n:"Runic", s:"ᛗᛜᛒᚹᚷᚲᛁᛂ˙ "},
-  ledger:   {n:"Ledger marks", s:"█▉▊▋▌▍▎▏ "},
-  custom:   {n:"Custom ramp…", custom:true},
+  classic:  {n:"Classic ASCII", g:"Classic", s:"@%#*+=-:. "},
+  dense:    {n:"Dense 70-step", g:"Classic", s:"$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "},
+  minimal:  {n:"Minimal", g:"Classic", s:"#+-. "},
+  contrast: {n:"Two-step", g:"Classic", s:"@. "},
+  typew:    {n:"Typewriter", g:"Classic", s:"WM#*+=-. "},
+  symbols:  {n:"Symbols", g:"Classic", s:"@#$%&*+=;:,. "},
+
+  blocks:   {n:"Block shades", g:"Blocks", s:"█▓▒░ ", u:true},
+  half:     {n:"Block mix", g:"Blocks", s:"█▀▄▌▐░· ", u:true},
+  ledger:   {n:"Ledger marks", g:"Blocks", s:"█▉▊▋▌▍▎▏ ", u:true},
+  quadrant: {n:"Quadrants", g:"Blocks", s:"█▛▜▙▟▖▗▘▝ ", u:true},
+  boxdraw:  {n:"Box drawing", g:"Blocks", s:"╬╫╪┼┽┾╁╀│─ ", u:true},
+  thin:     {n:"Hairline", g:"Blocks", s:"▮▊▌▎│┃╎ⵊ˙ ", u:true},
+
+  braille:  {n:"Braille (2×4 dots)", g:"Braille", braille:true, u:true},
+
+  numeric:  {n:"Numeric", g:"Technical", s:"98765432 "},
+  binary:   {n:"Binary", g:"Technical", s:"10 "},
+  hex:      {n:"Hexadecimal", g:"Technical", s:"FEDCBA9876543210 "},
+  sevenseg: {n:"Seven-segment", g:"Technical", s:"8069453217 "},
+  currency: {n:"Currency", g:"Technical", s:"₩₦₮฿₹€¥$¢. ", u:true},
+
+  geometric:{n:"Geometric", g:"Geometric", s:"◼◙◚▣▤▥▦▧▨▩◇○◌· ", u:true},
+  circles:  {n:"Dots & circles", g:"Geometric", s:"●◕◑◔○◦· ", u:true},
+  arrows:   {n:"Arrows", g:"Geometric", s:"▓▒░◤◥◣◢↑↓←→· ", u:true},
+  stars:    {n:"Stars", g:"Geometric", s:"✦✧★☆✩✫· ", u:true},
+
+  katakana: {n:"Katakana", g:"Language", s:"驫麤鑿龍籠襲鷹鴉夜雨爪ハ二丶ミ・ ", u:true},
+  runes:    {n:"Runic", g:"Language", s:"ᛗᛜᛒᚹᚷᚲᛁᛂ˙ ", u:true},
+  greek:    {n:"Greek", g:"Language", s:"ΩΨΦΞΠΣΘΔΛΓι· ", u:true},
+  cyrillic: {n:"Cyrillic", g:"Language", s:"ЖШЩФБДЦЛГтс· ", u:true},
+  hanzi:    {n:"Hanzi density", g:"Language", s:"豳鸞麤龗鑿龍鳥口十丶一 ", u:true},
+
+  cards:    {n:"Cards & pips", g:"Games", s:"♠♣♥♦♢♡· ", u:true},
+  chess:    {n:"Chess", g:"Games", s:"♛♜♝♞♟♙♘♗♖♕· ", u:true},
+  dice:     {n:"Dice", g:"Games", s:"⚅⚄⚃⚂⚁⚀ ", u:true},
+  dominoes: {n:"Dominoes", g:"Games", s:"🀹🀸🀷🀶🀵🀴🀳 ", u:true},
+  tally:    {n:"Tally marks", g:"Games", s:"𝍫𝍪𝍩𝍨𝍧 ", u:true},
+  music:    {n:"Music", g:"Games", s:"♬♫♪♩· ", u:true},
+
+  custom:   {n:"Custom ramp…", g:"Custom", custom:true},
 };
 
 /* ---------- font catalogue ----------
@@ -1160,12 +1526,58 @@ const FONT_CLASSES = [
 
 /* ---------- looks (presets) ---------- */
 const LOOKS = {
-  xerox:    {n:"Xerox",       d:"1-bit, blown out", cfg:{palette:'duo', c0:'#141414', c1:'#f4f1e8', levels:'2', algo:'ed:atkinson', cols:'300', cell:'2', contrast:'40', bright:'-4'}, cm:'mono', mode:'dither'},
-  newsprint:{n:"Newsprint",   d:"halftone screen",  cfg:{palette:'paper', algo:'ord:halftone8', cols:'220', cell:'3', contrast:'18', spread:'1.15'}, cm:'color', mode:'dither'},
-  gameboy:  {n:"Game Boy",    d:"four greens",      cfg:{palette:'gameboy', algo:'ed:atkinson', cols:'160', cell:'4', sat:'0'}, cm:'color', mode:'dither'},
-  crt:      {n:"CRT green",   d:"scanline screen",  cfg:{palette:'green', algo:'ord:hline', cols:'240', cell:'3', contrast:'25', gamma:'0.85'}, cm:'color', mode:'dither'},
-  terminal: {n:"Terminal",    d:"classic ASCII",    cfg:{charset:'classic', acols:'140', algo:'ed:fs', acolor:'flat', afg:'#D9DBD5', abg:'#171717', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
-  braille:  {n:"Braille micro",d:"2×4 dot packing", cfg:{charset:'braille', acols:'120', algo:'ed:atkinson', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  /* Print & repro */
+  newsprint:{n:"Newsprint",   g:"Print & repro", d:"halftone screen",  cfg:{palette:'paper', algo:'ord:halftone8', cols:'220', cell:'3', contrast:'18', spread:'1.15'}, cm:'color', mode:'dither'},
+  newsfine: {n:"Newsprint fine",g:"Print & repro", d:"tight screen",   cfg:{palette:'paper', algo:'ord:cluster6', cols:'340', cell:'2', contrast:'12', spread:'1.05'}, cm:'color', mode:'dither'},
+  riso:     {n:"Riso duo",    g:"Print & repro", d:"blue & amber",     cfg:{palette:'riso', algo:'ord:cluster4', cols:'200', cell:'3', contrast:'22', sat:'120'}, cm:'color', mode:'dither'},
+  risofluo: {n:"Riso fluoro", g:"Print & repro", d:"fluorescent inks", cfg:{palette:'risofluo', algo:'ed:atkinson', cols:'190', cell:'3', contrast:'28', sat:'135'}, cm:'color', mode:'dither'},
+  xerox:    {n:"Xerox",       g:"Print & repro", d:"1-bit, blown out", cfg:{palette:'duo', c0:'#141414', c1:'#f4f1e8', levels:'2', algo:'ed:atkinson', cols:'300', cell:'2', contrast:'40', bright:'-4'}, cm:'mono', mode:'dither'},
+  thermal:  {n:"Thermal receipt",g:"Print & repro", d:"384-column roll", cfg:{palette:'duo', c0:'#1a1a1a', c1:'#f6f4ec', algo:'ed:atkinson', cols:'384', cell:'1', contrast:'45', bright:'6'}, cm:'mono', mode:'dither'},
+  fax:      {n:"Fax",         g:"Print & repro", d:"over-contrasted",  cfg:{palette:'duo', c0:'#111111', c1:'#ffffff', algo:'ord:bayer2', cols:'220', cell:'2', contrast:'65', gamma:'0.9'}, cm:'mono', mode:'dither'},
+  etching:  {n:"Etching",     g:"Print & repro", d:"45° hatch",        cfg:{palette:'duo', c0:'#17150f', c1:'#efe7d3', algo:'ord:cross8', cols:'320', cell:'2', contrast:'35'}, cm:'mono', mode:'dither'},
+  silk:     {n:"Silkscreen",  g:"Print & repro", d:"fat dots",         cfg:{palette:'duo', c0:'#101010', c1:'#f0ece2', algo:'ord:cluster4', cols:'120', cell:'6', contrast:'30'}, cm:'mono', mode:'dither'},
+  blueprint:{n:"Blueprint",   g:"Print & repro", d:"cyanotype",        cfg:{palette:'cyanotype', algo:'ord:bayer8', cols:'260', cell:'2', contrast:'20', invert:true}, cm:'color', mode:'dither'},
+  cmyk:     {n:"CMYK plates", g:"Print & repro", d:"four-colour screen",cfg:{palette:'cmykpal', algo:'ord:screen', htshape:'round', htangle:'15', htfreq:'6', cols:'240', cell:'3', contrast:'15'}, cm:'color', mode:'dither'},
+
+  /* Console & retro */
+  gameboy:  {n:"Game Boy",    g:"Console & retro", d:"four greens",    cfg:{palette:'gameboy', algo:'ed:atkinson', cols:'160', cell:'4', sat:'0'}, cm:'color', mode:'dither'},
+  gbpocket: {n:"Game Boy Pocket",g:"Console & retro", d:"colder greens",cfg:{palette:'gbpocket', algo:'ord:bayer4', cols:'160', cell:'4', sat:'0'}, cm:'color', mode:'dither'},
+  c64:      {n:"Commodore 64",g:"Console & retro", d:"16 colours",     cfg:{palette:'c64', algo:'ed:fs', cols:'160', cell:'4', sat:'115'}, cm:'color', mode:'dither'},
+  pico8:    {n:"PICO-8",      g:"Console & retro", d:"sprite palette", cfg:{palette:'pico8', algo:'ed:burkes', cols:'128', cell:'5', contrast:'15'}, cm:'color', mode:'dither'},
+  nes:      {n:"NES",         g:"Console & retro", d:"console-ish",    cfg:{palette:'nes', algo:'ed:stucki', cols:'170', cell:'4'}, cm:'color', mode:'dither'},
+  cga:      {n:"CGA mode 4",  g:"Console & retro", d:"cyan & magenta", cfg:{palette:'cga', algo:'ed:fs', cols:'180', cell:'3', sat:'140', contrast:'20'}, cm:'color', mode:'dither'},
+  spectrum: {n:"ZX Spectrum", g:"Console & retro", d:"attribute clash",cfg:{palette:'spectrum', algo:'ord:bayer4', cols:'128', cell:'5', sat:'130'}, cm:'color', mode:'dither'},
+  mac1bit:  {n:"Macintosh",   g:"Console & retro", d:"512×342, 1-bit", cfg:{palette:'mac1bit', algo:'ed:atkinson', cols:'256', cell:'2', contrast:'25'}, cm:'mono', mode:'dither'},
+  sweetie:  {n:"Sweetie pop", g:"Console & retro", d:"modern 16",      cfg:{palette:'sweetie', algo:'ord:bayer4', cols:'180', cell:'4', sat:'120'}, cm:'color', mode:'dither'},
+
+  /* Screen */
+  crt:      {n:"CRT green",   g:"Screen", d:"scanline screen",         cfg:{palette:'green', algo:'ord:hline', cols:'240', cell:'3', contrast:'25', gamma:'0.85'}, cm:'color', mode:'dither'},
+  amber:    {n:"Amber CRT",   g:"Screen", d:"monitor phosphor",        cfg:{palette:'amber', algo:'ord:hline', cols:'240', cell:'3', contrast:'28', gamma:'0.85', fxbloom:'35'}, cm:'color', mode:'dither'},
+  vhs:      {n:"VHS",         g:"Screen", d:"soft, bloomed, torn",     cfg:{palette:'gray', levels:'8', algo:'ed:sierra2', cols:'200', cell:'3', fxblur:'1', fxbloom:'45', fxscan:'35', fxchroma:'25'}, cm:'color', mode:'dither'},
+  vapor:    {n:"Vaporwave",   g:"Screen", d:"pink & teal",             cfg:{palette:'vapor', algo:'ord:bayer8', cols:'200', cell:'3', sat:'150'}, cm:'color', mode:'dither'},
+
+  /* Photographic */
+  filmgrain:{n:"Film grain",  g:"Photographic", d:"8-step blue noise", cfg:{palette:'gray', levels:'8', algo:'ord:blue', cols:'420', cell:'1', noise:'10', contrast:'12'}, cm:'mono', mode:'dither'},
+  platinum: {n:"Platinum print",g:"Photographic", d:"warm 8-step",     cfg:{palette:'platinum', algo:'ord:blue32', cols:'400', cell:'1', gamma:'1.15'}, cm:'color', mode:'dither'},
+  mezzo:    {n:"Mezzotint",   g:"Photographic", d:"organic clumps",    cfg:{palette:'duo', c0:'#141210', c1:'#ece7dc', algo:'ord:mezzo', cols:'300', cell:'2', contrast:'20'}, cm:'mono', mode:'dither'},
+  hilbert:  {n:"Hilbert grain",g:"Photographic", d:"no scan artefact", cfg:{palette:'gray', levels:'4', algo:'ed:riemersma', cols:'360', cell:'1'}, cm:'mono', mode:'dither'},
+
+  /* Glitch */
+  smear:    {n:"Smear",       g:"Glitch", d:"horizontal bleed",        cfg:{algo:'ed:smear', palette:'duo', cols:'240', cell:'3', contrast:'30'}, cm:'mono', mode:'dither'},
+  rain:     {n:"Rain",        g:"Glitch", d:"vertical bleed",          cfg:{algo:'ed:fall', palette:'duo', cols:'240', cell:'3', contrast:'25'}, cm:'mono', mode:'dither'},
+  wave:     {n:"Waveform",    g:"Glitch", d:"modulated threshold",     cfg:{algo:'ord:sine', palette:'duo', cols:'260', cell:'3', contrast:'20'}, cm:'mono', mode:'dither'},
+  datablock:{n:"Datablock",   g:"Glitch", d:"JPEG & chroma tear",      cfg:{algo:'ed:split', palette:'cyber', cols:'220', cell:'3', fxjpeg:'55', fxchroma:'40', fxslice:'30', sat:'130'}, cm:'color', mode:'dither'},
+  moire:    {n:"Moiré",       g:"Glitch", d:"ring interference",       cfg:{algo:'ord:moire', palette:'duo', cols:'300', cell:'2', contrast:'25'}, cm:'mono', mode:'dither'},
+
+  /* ASCII */
+  terminal: {n:"Terminal",    g:"ASCII", d:"classic ASCII",            cfg:{charset:'classic', acols:'140', algo:'ed:fs', acolor:'flat', afg:'#D9DBD5', abg:'#171717', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  braille:  {n:"Braille micro",g:"ASCII", d:"2×4 dot packing",         cfg:{charset:'braille', acols:'120', algo:'ed:atkinson', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  matrix:   {n:"Matrix rain", g:"ASCII", d:"katakana, green ink",      cfg:{charset:'katakana', acols:'150', algo:'ord:bayer4', afg:'#39ff6a', abg:'#04120a', fsize:'11', lh:'0.95'}, cm:'mono', mode:'ascii'},
+  typewriter:{n:"Typewriter", g:"ASCII", d:"Courier on paper",         cfg:{charset:'typew', acols:'110', algo:'ed:atkinson', font:'"Courier New", monospace', afg:'#20201c', abg:'#f3efe3', fsize:'13', lh:'1.05'}, cm:'mono', mode:'ascii'},
+  shaded:   {n:"Block shaded",g:"ASCII", d:"▓▒░",                      cfg:{charset:'blocks', acols:'120', algo:'ed:fs', fsize:'12', lh:'1'}, cm:'mono', mode:'ascii'},
+  ledgerbar:{n:"Ledger bars", g:"ASCII", d:"eighth blocks",            cfg:{charset:'ledger', acols:'160', algo:'ord:bayer8', fsize:'11', lh:'1'}, cm:'mono', mode:'ascii'},
+  runic:    {n:"Runic",       g:"ASCII", d:"carved",                   cfg:{charset:'runes', acols:'100', algo:'ed:atkinson', afg:'#d8c9a3', abg:'#141210'}, cm:'mono', mode:'ascii'},
+  numprint: {n:"Numeric",     g:"ASCII", d:"printout",                 cfg:{charset:'numeric', acols:'140', algo:'ord:bayer4', afg:'#c9d1c9', abg:'#101410'}, cm:'mono', mode:'ascii'},
 };
 
 /* ---------- state ---------- */
@@ -1193,13 +1605,20 @@ let history = [];
   for(const k in ORD){ const o=document.createElement('option'); o.value='ord:'+k; o.textContent=ORD[k].n; g2.appendChild(o); }
   a.append(g1,g2); a.value='ed:fs';
 
-  const p = $('#palette');
-  for(const k in PALETTES){ const o=document.createElement('option'); o.value=k; o.textContent=PALETTES[k].n; p.appendChild(o); }
-  p.value='duo';
-
-  const c = $('#charset');
-  for(const k in CHARSETS){ const o=document.createElement('option'); o.value=k; o.textContent=CHARSETS[k].n; c.appendChild(o); }
-  c.value='classic';
+  // both lists are long enough now to need grouping; `g` is the section name
+  const grouped = (sel, map, fallback) => {
+    let g=null, box=sel;
+    for(const k in map){
+      if(map[k].g && map[k].g!==g){
+        g=map[k].g;
+        box=document.createElement('optgroup'); box.label=g; sel.appendChild(box);
+      }
+      const o=document.createElement('option'); o.value=k; o.textContent=map[k].n; box.appendChild(o);
+    }
+    sel.value=fallback;
+  };
+  grouped($('#palette'), PALETTES, 'duo');
+  grouped($('#charset'), CHARSETS, 'classic');
 
   // #font stays the single source of truth; the picker above it is just a nicer face on it
   const f = $('#font');
@@ -1221,23 +1640,58 @@ function syncOuts(){
 function algoName(key){ const [k,n]=key.split(':'); return (k==='ed'?ED:ORD)[n].n; }
 function rgbcss(c){ return `rgb(${c[0]},${c[1]},${c[2]})`; }
 
-/* ---------- palette resolution ---------- */
+/* ---------- palette resolution ----------
+   Tone curves decide *where along the tone axis* a palette's stops land. Four
+   evenly spaced stops and four perceptually spaced ones look nothing alike at
+   low depths, which is what makes 4-level output read as deliberate rather
+   than crushed. */
+const CURVES = {
+  linear: t=>t,
+  gamma:  t=>Math.pow(t, 1/1.6),
+  scurve: t=>t*t*(3-2*t),
+  // ACES-ish: lifted toe, rolled shoulder
+  film:   t=>Math.min(1, Math.max(0, (t*(2.51*t+0.03))/(t*(2.43*t+0.59)+0.14))),
+};
+const palLum = c => 0.299*c[0]+0.587*c[1]+0.114*c[2];
+
+/* Resample any palette to N tonal stops, regardless of how many colours it
+   started with. Undersampling a 16-colour palette to four is the deliberate
+   "mismatch" look; oversampling interpolates between neighbouring stops rather
+   than repeating one, which is what buys the smoother gradients. */
+function applyDepth(pal, curve){
+  const D = Math.round(num('depth'));
+  if(D < 2 || D === pal.length) return pal;
+  const s = pal.slice().sort((a,b)=>palLum(a)-palLum(b));
+  const out = [];
+  for(let i=0;i<D;i++){
+    const t = curve(i/(D-1))*(s.length-1);
+    const lo = Math.floor(t), hi = Math.min(s.length-1, lo+1), f = t-lo;
+    out.push([0,1,2].map(j=>Math.round(s[lo][j] + (s[hi][j]-s[lo][j])*f)));
+  }
+  return out;
+}
 function currentPalette(){
   const key = v('palette'), P = PALETTES[key];
+  const curve = CURVES[v('rampcurve')] || CURVES.linear;
+  // when depth is doing the resampling it owns the curve, or it gets applied twice
+  const rc = Math.round(num('depth')) >= 2 ? CURVES.linear : curve;
+  let pal;
   if(P.duo){
     const a = hexes(v('c0'))[0], b = hexes(v('c1'))[0];
     const L = Math.max(2, Math.round(num('levels')));
-    if(L<=2) return [a,b];
-    const out=[]; for(let i=0;i<L;i++){ const t=i/(L-1); out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t].map(Math.round)); }
-    return out;
+    if(L<=2) pal = [a,b];
+    else {
+      pal=[]; for(let i=0;i<L;i++){ const t=rc(i/(L-1)); pal.push([0,1,2].map(j=>Math.round(a[j]+(b[j]-a[j])*t))); }
+    }
+  } else if(P.ramp){
+    const L = Math.max(2, Math.round(num('levels'))); pal=[];
+    for(let i=0;i<L;i++){ const g=Math.round(rc(i/(L-1))*255); pal.push([g,g,g]); }
+  } else if(P.extracted){
+    pal = extracted || [[0,0,0],[255,255,255]];
+  } else {
+    pal = P.c;
   }
-  if(P.ramp){
-    const L = Math.max(2, Math.round(num('levels'))), out=[];
-    for(let i=0;i<L;i++){ const g=Math.round(i*255/(L-1)); out.push([g,g,g]); }
-    return out;
-  }
-  if(P.extracted) return extracted || [[0,0,0],[255,255,255]];
-  return P.c;
+  return applyDepth(pal, curve);
 }
 function paintSwatches(pal){
   const w=$('#swatches'); w.innerHTML='';
@@ -1290,13 +1744,55 @@ function paintPalQuick(){
   w.appendChild(add);
 }
 
-/* ---------- image adjustments ---------- */
+/* ---------- image adjustments ----------
+   A seeded generator, so grain and the glitch passes stop reshuffling on every
+   render. Without it the preview crawls while you drag an unrelated slider, and
+   a clip's grain flickers frame to frame. `frameSeed` is what temporal
+   variation advances to make it move on purpose instead. */
+function mulberry(seed){
+  let t = (seed>>>0) + 0x6D2B79F5;
+  return function(){
+    t = (t + 0x6D2B79F5)|0;
+    let r = Math.imul(t ^ (t>>>15), 1 | t);
+    r ^= r + Math.imul(r ^ (r>>>7), 61 | r);
+    return ((r ^ (r>>>14)) >>> 0) / 4294967296;
+  };
+}
+let fxSeed = 7;        // set once per render, from #fxseed + frameSeed
+let frameSeed = 0;     // advanced per frame by temporal variation
+let frameIndex = 0;    // which frame of a clip is being drawn
+
+/* ---------- temporal variation ----------
+   A static dither sitting on top of a moving picture reads as a screen door in
+   front of the image rather than as texture in it. Each mode moves the
+   threshold field between frames in a different way. Everything is a pure
+   function of frameIndex, so an exported frame matches what playback showed. */
+function temporal(){
+  const kind = v('tvar'), amt = num('tvamt')/100;
+  const z = {ox:0, oy:0, dt:0, bias:0, seed:0};
+  if(kind==='off' || !amt || !isVideo) return z;
+  const f = frameIndex;
+  switch(kind){
+    case 'noise':   return {...z, seed:f*7919};
+    case 'drift':   return {...z, ox:Math.round(f*amt*3)};
+    case 'roll':    return {...z, oy:Math.round(f*amt*3)};
+    case 'diag':    return {...z, ox:Math.round(f*amt*2), oy:Math.round(f*amt*2)};
+    case 'spin':    return {...z, ox:Math.round(Math.cos(f*0.3)*amt*8), oy:Math.round(Math.sin(f*0.3)*amt*8)};
+    case 'jitter':  return {...z, dt:(mulberry(f+1)()-0.5)*amt, seed:f*7919};
+    case 'pulse':   return {...z, dt:Math.sin(f*0.4)*amt*0.5};
+    case 'flicker': return {...z, bias:Math.sin(f*0.7)*amt*40};
+    case 'sweep':   return {...z, bias:((f*amt*8)%80)-40};
+  }
+  return z;
+}
+
 function adjust(d){
   const bri = num('bright')*2.55;
   const con = num('contrast')/100;
   const k = con>=0 ? 1/(1-Math.min(con,0.99)) : 1+con;
   const gam = num('gamma'), sat = num('sat')/100;
   const grain = num('noise')*1.28, inv = v('invert'), mono = (colormode==='mono');
+  const rnd = mulberry(fxSeed);
   const gl = new Uint8Array(256);
   for(let i=0;i<256;i++) gl[i] = Math.max(0, Math.min(255, Math.round(255*Math.pow(i/255, 1/gam))));
   const a = d.data;
@@ -1305,7 +1801,7 @@ function adjust(d){
     r=(r-128)*k+128+bri; g=(g-128)*k+128+bri; b=(b-128)*k+128+bri;
     if(mono){ const l=0.299*r+0.587*g+0.114*b; r=g=b=l; }
     else if(sat!==1){ const l=0.299*r+0.587*g+0.114*b; r=l+(r-l)*sat; g=l+(g-l)*sat; b=l+(b-l)*sat; }
-    if(grain){ const n=(Math.random()-0.5)*grain; r+=n; g+=n; b+=n; }
+    if(grain){ const n=(rnd()-0.5)*grain; r+=n; g+=n; b+=n; }
     if(inv){ r=255-r; g=255-g; b=255-b; }
     a[i]=r<0?0:r>255?255:r; a[i+1]=g<0?0:g>255?255:g; a[i+2]=b<0?0:b>255?255:b;
   }
@@ -1328,20 +1824,21 @@ function convolve(d, w, h, k, div, bias){
     a[o]=sr/div+bias; a[o+1]=sg/div+bias; a[o+2]=sb/div+bias;
   }
 }
-function effects(d, w, h){
-  const blur=Math.round(num('fxblur')), sharp=num('fxsharp')/100, edge=num('fxedge')/100;
-  const post=Math.round(num('fxpost')), bloom=num('fxbloom')/100, scan=num('fxscan')/100;
-  const a=d.data;
-  for(let i=0;i<blur;i++) convolve(d,w,h,[1,2,1,2,4,2,1,2,1],16,0);
-  if(sharp>0){
-    const c=1+4*sharp, s=-sharp;
-    convolve(d,w,h,[0,s,0, s,c, s, 0,s,0],1,0);
-  }
-  if(edge>0){
-    const src=new Uint8ClampedArray(a);
+/* Every pass, in one table. `run` gets the amount already normalised the way
+   that pass wants it. Order is not a property of any single pass, so it lives
+   in #fxorder — see fxOrder(). */
+const FX = {
+  blur:  {n:"Blur",     ctrl:'fxblur',   max:4,  norm:v=>Math.round(v), run:(d,w,h,n)=>{
+    for(let i=0;i<n;i++) convolve(d,w,h,[1,2,1,2,4,2,1,2,1],16,0);
+  }},
+  sharp: {n:"Sharpen",  ctrl:'fxsharp',  norm:v=>v/100, run:(d,w,h,s)=>{
+    convolve(d,w,h,[0,-s,0, -s,1+4*s, -s, 0,-s,0],1,0);
+  }},
+  edge:  {n:"Edge detect", ctrl:'fxedge', norm:v=>v/100, run:(d,w,h,edge)=>{
+    const a=d.data, src=new Uint8ClampedArray(a);
+    const kx=[-1,0,1,-2,0,2,-1,0,1], ky=[-1,-2,-1,0,0,0,1,2,1];
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
       let gx=0, gy=0;
-      const kx=[-1,0,1,-2,0,2,-1,0,1], ky=[-1,-2,-1,0,0,0,1,2,1];
       for(let dy=-1,i=0;dy<=1;dy++) for(let dx=-1;dx<=1;dx++,i++){
         const yy=Math.min(h-1,Math.max(0,y+dy)), xx=Math.min(w-1,Math.max(0,x+dx));
         const p=(yy*w+xx)*4, l=0.299*src[p]+0.587*src[p+1]+0.114*src[p+2];
@@ -1350,15 +1847,16 @@ function effects(d, w, h){
       const m=Math.min(255, Math.hypot(gx,gy)), o=(y*w+x)*4;
       a[o]=src[o]*(1-edge)+m*edge; a[o+1]=src[o+1]*(1-edge)+m*edge; a[o+2]=src[o+2]*(1-edge)+m*edge;
     }
-  }
-  if(post>=2){
-    const step=255/(post-1);
+  }},
+  post:  {n:"Posterize", ctrl:'fxpost', max:16, norm:v=>Math.round(v), run:(d,w,h,post)=>{
+    if(post<2) return;
+    const a=d.data, step=255/(post-1);
     for(let i=0;i<a.length;i+=4){
       a[i]=Math.round(a[i]/step)*step; a[i+1]=Math.round(a[i+1]/step)*step; a[i+2]=Math.round(a[i+2]/step)*step;
     }
-  }
-  if(bloom>0){
-    const bright=new Uint8ClampedArray(a.length);
+  }},
+  bloom: {n:"Glow", ctrl:'fxbloom', norm:v=>v/100, run:(d,w,h,bloom)=>{
+    const a=d.data, bright=new Uint8ClampedArray(a.length);
     for(let i=0;i<a.length;i+=4){
       const l=0.299*a[i]+0.587*a[i+1]+0.114*a[i+2];
       const t=l>150 ? (l-150)/105 : 0;
@@ -1372,17 +1870,199 @@ function effects(d, w, h){
       a[i+1]=Math.min(255,a[i+1]+bright[i+1]*bloom);
       a[i+2]=Math.min(255,a[i+2]+bright[i+2]*bloom);
     }
-  }
-  if(scan>0){
+  }},
+  chroma:{n:"Chromatic aberration", ctrl:'fxchroma', norm:v=>v/100, run:(d,w,h,amt)=>{
+    // red and blue pull apart radially, the way a cheap lens splits them
+    const a=d.data, src=new Uint8ClampedArray(a), cx=w/2, cy=h/2;
+    const k = amt*0.05;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const o=(y*w+x)*4, dx=(x-cx)*k, dy=(y-cy)*k;
+      const rx=Math.min(w-1,Math.max(0,Math.round(x+dx))), ry=Math.min(h-1,Math.max(0,Math.round(y+dy)));
+      const bx=Math.min(w-1,Math.max(0,Math.round(x-dx))), by=Math.min(h-1,Math.max(0,Math.round(y-dy)));
+      a[o]   = src[(ry*w+rx)*4];
+      a[o+2] = src[(by*w+bx)*4+2];
+    }
+  }},
+  jpeg:  {n:"JPEG glitch", ctrl:'fxjpeg', norm:v=>v/100, run:(d,w,h,amt)=>{
+    // 8×8 blocks flattened towards their mean, with ringing pushed onto the
+    // block edges — the shape of JPEG failure without an actual DCT
+    const a=d.data, B=8, q=amt;
+    for(let by=0;by<h;by+=B) for(let bx=0;bx<w;bx+=B){
+      let sr=0,sg=0,sb=0,n=0;
+      const x1=Math.min(w,bx+B), y1=Math.min(h,by+B);
+      for(let y=by;y<y1;y++) for(let x=bx;x<x1;x++){ const i=(y*w+x)*4; sr+=a[i]; sg+=a[i+1]; sb+=a[i+2]; n++; }
+      sr/=n; sg/=n; sb/=n;
+      for(let y=by;y<y1;y++) for(let x=bx;x<x1;x++){
+        const i=(y*w+x)*4;
+        const onEdge = (x===bx || y===by || x===x1-1 || y===y1-1);
+        const ring = onEdge ? (1+q*0.5) : 1;
+        a[i]   = (a[i]  *(1-q) + sr*q) * ring;
+        a[i+1] = (a[i+1]*(1-q) + sg*q) * ring;
+        a[i+2] = (a[i+2]*(1-q) + sb*q) * ring;
+      }
+    }
+  }},
+  wave:  {n:"Waveform", ctrl:'fxwave', norm:v=>v/100, run:(d,w,h,amt)=>{
+    const a=d.data, src=new Uint8ClampedArray(a), amp=amt*w*0.12, f=0.14;
+    for(let y=0;y<h;y++){
+      const sh=Math.round(Math.sin(y*f)*amp);
+      if(!sh) continue;
+      for(let x=0;x<w;x++){
+        const o=(y*w+x)*4, sx=Math.min(w-1,Math.max(0,x+sh)), s=(y*w+sx)*4;
+        a[o]=src[s]; a[o+1]=src[s+1]; a[o+2]=src[s+2];
+      }
+    }
+  }},
+  sort:  {n:"Pixel sort", ctrl:'fxsort', norm:v=>v/100, run:(d,w,h,amt)=>{
+    // sort each run of pixels whose luminance sits inside a threshold band
+    const a=d.data, lo=(1-amt)*255*0.5, hi=255-(1-amt)*255*0.2;
+    const lum=i=>0.299*a[i]+0.587*a[i+1]+0.114*a[i+2];
+    for(let y=0;y<h;y++){
+      let x=0;
+      while(x<w){
+        while(x<w){ const l=lum((y*w+x)*4); if(l>=lo&&l<=hi) break; x++; }
+        let end=x;
+        while(end<w){ const l=lum((y*w+end)*4); if(l<lo||l>hi) break; end++; }
+        if(end-x > 2){
+          const run=[];
+          for(let i=x;i<end;i++){ const o=(y*w+i)*4; run.push([a[o],a[o+1],a[o+2],lum(o)]); }
+          run.sort((p,q)=>p[3]-q[3]);
+          for(let i=x;i<end;i++){ const o=(y*w+i)*4, c=run[i-x]; a[o]=c[0]; a[o+1]=c[1]; a[o+2]=c[2]; }
+        }
+        x = end>x ? end : x+1;
+      }
+    }
+  }},
+  slice: {n:"Slice shift", ctrl:'fxslice', norm:v=>v/100, run:(d,w,h,amt)=>{
+    const a=d.data, src=new Uint8ClampedArray(a), rnd=mulberry(fxSeed);
+    let y=0;
+    while(y<h){
+      const band = 1 + Math.floor(rnd()*Math.max(1, h*0.12));
+      const sh = Math.round((rnd()*2-1) * amt * w * 0.3);
+      const y1 = Math.min(h, y+band);
+      if(sh) for(let yy=y;yy<y1;yy++) for(let x=0;x<w;x++){
+        const o=(yy*w+x)*4;
+        let sx=(x+sh)%w; if(sx<0) sx+=w;
+        const s=(yy*w+sx)*4;
+        a[o]=src[s]; a[o+1]=src[s+1]; a[o+2]=src[s+2];
+      }
+      y = y1;
+    }
+  }},
+  scan:  {n:"Scanlines", ctrl:'fxscan', norm:v=>v/100, run:(d,w,h,scan)=>{
+    const a=d.data, f=1-scan*0.8;
     for(let y=1;y<h;y+=2) for(let x=0;x<w;x++){
-      const o=(y*w+x)*4, f=1-scan*0.8;
+      const o=(y*w+x)*4; a[o]*=f; a[o+1]*=f; a[o+2]*=f;
+    }
+  }},
+  vig:   {n:"Vignette", ctrl:'fxvig', norm:v=>v/100, run:(d,w,h,amt)=>{
+    const a=d.data, cx=w/2, cy=h/2, r=Math.hypot(cx,cy);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const o=(y*w+x)*4;
+      const f = 1 - amt*Math.pow(Math.hypot(x-cx,y-cy)/r, 2.2);
       a[o]*=f; a[o+1]*=f; a[o+2]*=f;
     }
+  }},
+};
+const FX_ORDER = ['blur','sharp','edge','post','bloom','chroma','jpeg','wave','sort','slice','scan','vig'];
+
+/* Order is a property of the list, not of any control, so it needs somewhere
+   readCfg() can see it: a hidden input holding a comma-joined key list. Unknown
+   keys are dropped and missing ones appended, so a preset saved before a pass
+   existed still loads and simply gets the new pass at the end. */
+function fxOrder(){
+  const raw = (v('fxorder')||'').split(',').filter(k=>FX[k]);
+  const seen = new Set(raw);
+  return raw.concat(FX_ORDER.filter(k=>!seen.has(k)));
+}
+function effects(d, w, h){
+  for(const k of fxOrder()){
+    const F = FX[k];
+    const raw = num(F.ctrl);
+    if(!raw) continue;
+    F.run(d, w, h, F.norm ? F.norm(raw) : raw);
   }
 }
 
-/* ---------- quantize ---------- */
+/* Build the stack once. Reordering *moves* the existing rows rather than
+   rebuilding them, so the boot-time auto-binding on each slider survives. */
+(function buildFxStack(){
+  const box = $('#fxstack');
+  FX_ORDER.forEach(k=>{
+    const F = FX[k];
+    const row = document.createElement('div');
+    row.className = 'fxrow'; row.dataset.fx = k;
+    row.innerHTML =
+      `<div class="sld"><span class="lab"><span></span> <b data-out="${F.ctrl}">0</b></span>` +
+      `<input type="range" id="${F.ctrl}" min="0" max="${F.max||100}" value="0"></div>` +
+      `<div class="fxmove">` +
+        `<button class="fxup" data-nobind aria-label="Move ${F.n} earlier">▲</button>` +
+        `<button class="fxdn" data-nobind aria-label="Move ${F.n} later">▼</button>` +
+      `</div>`;
+    row.querySelector('.lab > span').textContent = F.n;
+    row.querySelector('.fxup').addEventListener('click',()=>moveFx(k,-1));
+    row.querySelector('.fxdn').addEventListener('click',()=>moveFx(k, 1));
+    box.appendChild(row);
+  });
+  $('#fxorder').value = FX_ORDER.join(',');
+})();
+function moveFx(key, dir){
+  const order = fxOrder(), i = order.indexOf(key), j = i+dir;
+  if(i<0 || j<0 || j>=order.length) return;
+  order.splice(j, 0, order.splice(i,1)[0]);
+  $('#fxorder').value = order.join(',');
+  syncFxStack();
+  schedule(); pushHistory(true);
+}
+// reflect #fxorder into the DOM order, and grey out passes that are doing nothing
+function syncFxStack(){
+  const box = $('#fxstack'), order = fxOrder();
+  order.forEach(k=>{
+    const row = box.querySelector(`.fxrow[data-fx="${k}"]`);
+    if(row) box.appendChild(row);           // appendChild moves, it does not clone
+  });
+  order.forEach((k,i)=>{
+    const row = box.querySelector(`.fxrow[data-fx="${k}"]`);
+    if(!row) return;
+    row.classList.toggle('off', !num(FX[k].ctrl));
+    row.querySelector('.fxup').disabled = i===0;
+    row.querySelector('.fxdn').disabled = i===order.length-1;
+  });
+}
+
+/* ---------- quantize ----------
+   `distMode` is read once per render into a module-level rather than per pixel;
+   nearest() is the hottest function in the file. */
+let distMode = 'fast';
+function srgbToOklab(r,g,b){
+  const f = c => { c/=255; return c<=0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); };
+  const R=f(r), G=f(g), B=f(b);
+  const l = Math.cbrt(0.4122214708*R + 0.5363325363*G + 0.0514459929*B);
+  const m = Math.cbrt(0.2119034982*R + 0.6806995451*G + 0.1073969566*B);
+  const s = Math.cbrt(0.0883024619*R + 0.2817188376*G + 0.6299787005*B);
+  return [0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
+          1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
+          0.0259040371*l + 0.7827717662*m - 0.8086757660*s];
+}
+// palettes are small and stable within a render, so convert once and cache
+let _okPal = null, _okSrc = null;
+function palOk(pal){
+  if(_okSrc === pal) return _okPal;
+  _okSrc = pal; _okPal = pal.map(c=>srgbToOklab(c[0], c[1], c[2]));
+  return _okPal;
+}
 function nearest(pal, r,g,b){
+  if(distMode === 'perceptual'){
+    const P = palOk(pal);
+    const q = srgbToOklab(r<0?0:r>255?255:r, g<0?0:g>255?255:g, b<0?0:b>255?255:b);
+    let bi=0, bd=Infinity;
+    for(let i=0;i<P.length;i++){
+      const p=P[i], d0=q[0]-p[0], d1=q[1]-p[1], d2=q[2]-p[2];
+      const d = d0*d0 + d1*d1 + d2*d2;
+      if(d<bd){ bd=d; bi=i; }
+    }
+    return pal[bi];
+  }
   let bi=0, bd=Infinity;
   for(let i=0;i<pal.length;i++){
     const p=pal[i], dr=r-p[0], dg=g-p[1], db=b-p[2];
@@ -1400,13 +2080,20 @@ function stepGuess(pal){
 
 function ditherPixels(d, w, h, pal, algoKey, opts){
   const [kind,key] = algoKey.split(':');
-  const bias = opts.bias;
+  const tv = opts.tv || {ox:0, oy:0, dt:0, bias:0};
+  const bias = opts.bias + tv.bias;
   if(kind==='ord'){
     const O = ORD[key], sp = opts.spread * stepGuess(pal);
+    // Parametric screens build a specialised threshold function once per render
+    // (make) rather than reading their controls inside the pixel loop.
+    const fn = O.make ? O.make(w,h) : O.fn;
     const a = d.data;
+    const mh = O.m ? O.m.length : 1, mw = O.m ? O.m[0].length : 1;
     for(let y=0;y<h;y++) for(let x=0;x<w;x++){
       const i=(y*w+x)*4;
-      let t = O.fn ? O.fn(x,y) : O.m[y%O.m.length][x%O.m[0].length];
+      let t = fn ? fn(x+tv.ox, y+tv.oy, w, h)
+                 : O.m[(((y+tv.oy)%mh)+mh)%mh][(((x+tv.ox)%mw)+mw)%mw];
+      t += tv.dt;
       const off = (t-0.5)*sp + bias;
       const c = nearest(pal, a[i]+off, a[i+1]+off, a[i+2]+off);
       a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
@@ -1414,6 +2101,7 @@ function ditherPixels(d, w, h, pal, algoKey, opts){
     return;
   }
   const E = ED[key], str = opts.strength;
+  if(E.curve) return riemersmaDither(d, w, h, pal, opts);
   const buf = new Float32Array(w*h*3), a = d.data;
   for(let p=0,i=0;p<w*h;p++,i+=4){ buf[p*3]=a[i]+bias; buf[p*3+1]=a[i+1]+bias; buf[p*3+2]=a[i+2]+bias; }
   for(let y=0;y<h;y++){
@@ -1434,6 +2122,28 @@ function ditherPixels(d, w, h, pal, algoKey, opts){
     }
   }
   for(let p=0,i=0;p<w*h;p++,i+=4){ a[i]=buf[p*3]; a[i+1]=buf[p*3+1]; a[i+2]=buf[p*3+2]; }
+}
+
+/* Dither on tone, then map the resulting level onto the palette by luminance
+   rank — colour goes *into* the dither rather than before or after it. In this
+   mode a palette's hues stop deciding which colour a pixel lands on and only
+   its ordering does, which is exactly what gives the output its retro
+   character: the tonal scale and the colour depth can be mismatched on purpose. */
+function ditherByTone(d, w, h, pal, algoKey, opts){
+  const N = pal.length;
+  const sorted = pal.slice().sort((a,b)=>palLum(a)-palLum(b));
+  const ramp = [];
+  for(let i=0;i<N;i++){ const g=Math.round(i*255/Math.max(1,N-1)); ramp.push([g,g,g]); }
+  const a = d.data;
+  for(let i=0;i<a.length;i+=4){
+    const l = 0.299*a[i] + 0.587*a[i+1] + 0.114*a[i+2];
+    a[i]=a[i+1]=a[i+2]=l;
+  }
+  ditherPixels(d, w, h, ramp, algoKey, opts);
+  for(let i=0;i<a.length;i+=4){
+    const c = sorted[Math.max(0, Math.min(N-1, Math.round(a[i]/255*(N-1))))];
+    a[i]=c[0]; a[i+1]=c[1]; a[i+2]=c[2];
+  }
 }
 
 /* ---------- median cut extraction ---------- */
@@ -1464,9 +2174,96 @@ function extractPalette(n){
   });
 }
 
+/* ---------- CMYK halftone ----------
+   Four screens at the classic separation angles, each halftoned to 1-bit on its
+   own channel, then multiplied back together the way overlapping inks combine
+   on paper. This is a *look*, not a colour-managed separation: the black
+   generation below is plain GCR with a slider, and no profile is involved. */
+const CMYK_ANGLES = {c:15, m:75, y:0, k:45};
+function cmykScreen(d, w, h, opts){
+  const a = d.data;
+  const gcr = num('ucr')/100;
+  const ang0 = num('htangle');
+  // one screen per channel — same shape, ruling, ink and gain, rotated apart
+  const plate = {};
+  for(const ch in CMYK_ANGLES) plate[ch] = ORD.screen.make(w, h, (ang0 + CMYK_ANGLES[ch]) % 180);
+  const sp = opts.spread;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    const i=(y*w+x)*4;
+    const r=a[i]/255, g=a[i+1]/255, b=a[i+2]/255;
+    let k = 1 - Math.max(r, g, b);
+    k *= gcr;
+    const inv = 1 - k;
+    const c = inv > 0.001 ? (1-r-k)/inv : 0;
+    const m = inv > 0.001 ? (1-g-k)/inv : 0;
+    const yy= inv > 0.001 ? (1-b-k)/inv : 0;
+    const amt = {c, m, y:yy, k};
+    let orr=1, og=1, ob=1;
+    for(const ch in plate){
+      const t = plate[ch](x, y);
+      // spread widens the threshold window the same way it does for ordered dither
+      const on = Math.max(0, Math.min(1, amt[ch])) > (t-0.5)*sp + 0.5;
+      if(!on) continue;
+      if(ch==='c'){ orr*=0; og*=1; ob*=1; }
+      else if(ch==='m'){ orr*=1; og*=0; ob*=1; }
+      else if(ch==='y'){ orr*=1; og*=1; ob*=0; }
+      else { orr*=0; og*=0; ob*=0; }
+    }
+    a[i]=orr*255; a[i+1]=og*255; a[i+2]=ob*255;
+  }
+}
+
+/* ---------- output scale ----------
+   The export scale is always a whole number. Nearest-neighbour output with a
+   fractional scale gives cells of uneven width, which is exactly the resampling
+   mush the tool exists to avoid — so a target size picks the largest integer
+   multiplier that *fits inside* it and reports what actually came out, rather
+   than letterboxing or resampling to hit the number exactly. */
+const SIZE_PRESETS = [
+  {k:'sq1080',  n:"Square 1080",      w:1080, h:1080, note:"social"},
+  {k:'pt1350',  n:"Portrait 1350",    w:1080, h:1350, note:"social"},
+  {k:'story',   n:"Story 1920",       w:1080, h:1920, note:"social"},
+  {k:'hd',      n:"HD 1920×1080",     w:1920, h:1080, note:"screen"},
+  {k:'uhd',     n:"4K 3840×2160",     w:3840, h:2160, note:"screen"},
+  {k:'a4',      n:"A4 at 300dpi",     w:2480, h:3508, note:"print"},
+  {k:'a3',      n:"A3 at 300dpi",     w:3508, h:4961, note:"print"},
+  {k:'letter',  n:"Letter at 300dpi", w:2550, h:3300, note:"print"},
+];
+(function(){
+  const s = $('#sizepreset');
+  SIZE_PRESETS.forEach(P=>{
+    const o=document.createElement('option'); o.value=P.k; o.textContent=`${P.n} · ${P.note}`; s.appendChild(o);
+  });
+  s.value = 'sq1080';
+})();
+// the output size at 1×, before any export multiplier
+function baseOutSize(){
+  if(mode==='ascii') return {w:out.width/Math.max(1,lastScale), h:out.height/Math.max(1,lastScale)};
+  const cols = Math.round(num('cols'));
+  const rows = Math.max(1, Math.round(cols * (img ? img.height/img.width : 0.75)));
+  const cell = Math.round(num('cell'));
+  return {w:cols*cell, h:rows*cell};
+}
+let lastScale = 1;
+function exportScale(){
+  const mode_ = v('sizemode');
+  if(mode_==='multiplier') return Math.max(1, Math.round(num('oscale')));
+  const b = baseOutSize();
+  if(!b.w || !b.h) return 1;
+  let tw, th;
+  if(mode_==='longedge'){
+    const t = Math.max(64, Math.round(num('targetpx')));
+    if(b.w >= b.h){ tw=t; th=Infinity; } else { th=t; tw=Infinity; }
+  } else {
+    const P = SIZE_PRESETS.find(p=>p.k===v('sizepreset')) || SIZE_PRESETS[0];
+    tw=P.w; th=P.h;
+  }
+  return Math.max(1, Math.floor(Math.min(tw/b.w, th/b.h)));
+}
+
 /* ---------- render: dither ---------- */
 function renderDither(){
-  const cols = Math.round(num('cols'));
+  const cols = Math.min(previewCols(), Math.round(num('cols')));
   const rows = Math.max(1, Math.round(cols * img.height/img.width));
   work.width=cols; work.height=rows;
   wctx.imageSmoothingEnabled = true;
@@ -1478,16 +2275,20 @@ function renderDither(){
   effects(d, cols, rows);
   const pal = currentPalette();
   paintSwatches(pal);
-  ditherPixels(d, cols, rows, pal, v('algo'), {
+  const opts = {
     strength: num('strength')/100,
     spread: num('spread'),
     bias: num('bias')*1.28,
     serp: v('serp'),
-  });
+    tv: temporal(),
+  };
+  if(v('algo')==='ord:screen' && v('cmyk')) cmykScreen(d, cols, rows, opts);
+  else if(v('palmap')==='luma') ditherByTone(d, cols, rows, pal, v('algo'), opts);
+  else ditherPixels(d, cols, rows, pal, v('algo'), opts);
   wctx.putImageData(d,0,0);
   lastGrid = {cols, rows, cell:Math.round(num('cell')), data:new Uint8ClampedArray(d.data)};
   lastLines = null; lastColors = null;
-  let cell = Math.round(num('cell')) * Math.round(num('oscale'));
+  let cell = Math.round(num('cell')) * exportScale();
   const LIMIT = 8192;
   while(cell>1 && (cols*cell>LIMIT || rows*cell>LIMIT)) cell--;
   out.width = cols*cell; out.height = rows*cell;
@@ -1503,7 +2304,19 @@ function charsetChars(){
   const key = v('charset'), C = CHARSETS[key];
   let s = C.custom ? v('custom') : (C.s || " ");
   if(!s.length) s = " ";
-  return Array.from(s); // index 0 is always the densest glyph
+  const chars = Array.from(s); // index 0 is always the densest glyph
+  // Character depth: keep only the first N steps of the ramp. ASCII mode
+  // dithers against an N-level ramp where N is the charset length, so this is
+  // literally changing N — a one-line control with a large visual effect.
+  const D = Math.round(num('cdepth'));
+  if(D >= 2 && D < chars.length){
+    // always keep the last glyph: every ramp ends with the empty one
+    const out = [];
+    for(let i=0;i<D-1;i++) out.push(chars[Math.round(i*(chars.length-2)/(D-2 || 1))]);
+    out.push(chars[chars.length-1]);
+    return out;
+  }
+  return chars;
 }
 // Dense glyphs belong on bright areas when the ink is lighter than the paper.
 function denseOnBright(){
@@ -1516,7 +2329,7 @@ function denseOnBright(){
 }
 function renderAscii(){
   const key = v('charset'), isBraille = !!CHARSETS[key].braille;
-  const cols = Math.round(num('acols'));
+  const cols = Math.min(previewCols(), Math.round(num('acols')));
   const fsize = num('fsize'), lhf = num('lh');
   const fam = v('font');
   octx.font = `${fsize}px ${fam}`;
@@ -1524,7 +2337,7 @@ function renderAscii(){
   const chh = Math.max(1, fsize*lhf);
   const rows = Math.max(1, Math.round(cols * (img.height/img.width) * (cw/chh)));
 
-  const opts = {strength:num('strength')/100, spread:num('spread'), bias:num('bias')*1.28, serp:v('serp')};
+  const opts = {strength:num('strength')/100, spread:num('spread'), bias:num('bias')*1.28, serp:v('serp'), tv:temporal()};
   const inkMode = v('acolor');
 
   // color sampling pass (undithered averages)
@@ -1579,12 +2392,14 @@ function renderAscii(){
     const ramp=[]; for(let i=0;i<N;i++){ const g=Math.round(i*255/Math.max(1,N-1)); ramp.push([g,g,g]); }
     ditherPixels(d,cols,rows,ramp,v('algo'),opts);
     const a=d.data;
+    // offset slides the whole luminance→glyph mapping along the ramp
+    const off = num('choff')/100 * (N-1);
     for(let r=0;r<rows;r++){
       const line=[];
       for(let c=0;c<cols;c++){
         const lum=a[(r*cols+c)*4];
         const t = bright ? (255-lum) : lum;
-        const idx=Math.max(0,Math.min(N-1,Math.round(t/255*(N-1))));
+        const idx=Math.max(0,Math.min(N-1,Math.round(t/255*(N-1) + off)));
         line.push(chars[idx]);
       }
       lines.push(line);
@@ -1595,10 +2410,11 @@ function renderAscii(){
   const pad = Math.round(fsize*0.5);
   out.width = Math.ceil(cols*cw)+pad*2;
   out.height = Math.ceil(rows*chh)+pad*2;
-  let scale = Math.round(num('oscale'));
+  let scale = exportScale();
   const LIMIT = 8192;
   while(scale>1 && (out.width*scale>LIMIT || out.height*scale>LIMIT)) scale--;
   if(scale>1){ out.width*=scale; out.height*=scale; }
+  lastScale = scale;
   octx.setTransform(scale,0,0,scale,0,0);
   octx.clearRect(0,0,out.width,out.height);
   if(!v('atrans')){ octx.fillStyle=v('abg'); octx.fillRect(0,0,out.width,out.height); }
@@ -1672,26 +2488,66 @@ function renderAlgoCard(){
   try{ algoThumb(key); }catch(e){ /* thumbnail is decorative — never block a render */ }
 }
 
-/* ---------- driver ---------- */
-let queued=false;
+/* ---------- driver ----------
+   Two throttles, both driven by what the last render actually cost rather than
+   by a fixed guess:
+
+   1. While a slider is being dragged, an expensive setup renders at a reduced
+      grid. The pipeline is resolution-independent, so this is just a cap on
+      `cols` — the texture is coarser for the duration of the drag and the full
+      render lands on release.
+   2. If a render overran a frame, input is coalesced for a short window instead
+      of trying again immediately. rAF alone does not help here: it fires at
+      60Hz regardless of whether the last render took 4ms or 400ms, so a heavy
+      setup would queue a fresh render behind every keystroke.
+
+   Both are no-ops on a cheap render, which is the common case. */
+let queued=false, lastCost=0, dragging=false, coalesceUntil=0;
+const PREVIEW_MAX_COLS = 220;   // roughly the point where a 12-tap kernel stays interactive
+function previewCols(){
+  return dragging && lastCost > 40 ? PREVIEW_MAX_COLS : Infinity;
+}
 function render(){
   syncOuts();
   updateVisibility();
   renderAlgoCard();
   paintPalQuick();
   document.body.classList.toggle('empty', !img);
+  distMode = v('dist');
+  frameSeed = temporal().seed;
+  fxSeed = Math.round(num('fxseed')) + frameSeed;
   if(!img){ setStatus('—', 0); $('#st-time').textContent='—'; return; }
   if(compareOn){ drawCompare(); return; }
   const t0 = performance.now();
   try{ mode==='dither' ? renderDither() : renderAscii(); }
   catch(err){ console.error(err); toast('Render failed — see console'); }
-  $('#st-time').textContent = `rendered in ${Math.round(performance.now()-t0)}ms`;
+  lastCost = performance.now()-t0;
+  const preview = previewCols() !== Infinity;
+  $('#st-time').textContent = preview
+    ? `preview · ${Math.round(lastCost)}ms`
+    : `rendered in ${Math.round(lastCost)}ms`;
   applyZoom();
 }
 function schedule(){
-  if(queued) return; queued=true;
-  requestAnimationFrame(()=>{ queued=false; render(); });
+  if(queued) return;
+  queued=true;
+  const wait = Math.max(0, coalesceUntil - performance.now());
+  const go = ()=>requestAnimationFrame(()=>{
+    queued=false;
+    render();
+    // a render that overran a frame earns a quiet window before the next one
+    coalesceUntil = lastCost > 40 ? performance.now() + Math.min(200, lastCost*1.5) : 0;
+  });
+  wait ? setTimeout(go, wait) : go();
 }
+// a pointer down on any slider means a drag is starting; the full render lands
+// on release, or on the next tick if the pointer was never down (keyboard, ⌘K)
+['pointerdown','keydown'].forEach(ev=>$('#rail').addEventListener(ev, e=>{
+  if(e.target.type==='range'){ dragging = ev==='pointerdown'; }
+}));
+['pointerup','pointercancel'].forEach(ev=>document.addEventListener(ev, ()=>{
+  if(dragging){ dragging=false; schedule(); }
+}));
 function updateVisibility(){
   const isAscii = mode==='ascii';
   $('#blk-ramp').classList.toggle('hidden', !isAscii);
@@ -1701,20 +2557,44 @@ function updateVisibility(){
   $('#wrap-cell').classList.toggle('hidden', isAscii);
   $('#textwrap').classList.toggle('on', isAscii);
   $('#wrap-atrans').classList.toggle('hidden', !isAscii);
-  const isOrd = v('algo').startsWith('ord:');
+  const algo = v('algo'), isOrd = algo.startsWith('ord:');
+  const isCurve = !isOrd && !!ED[algo.split(':')[1]].curve;
   $('#wrap-strength').classList.toggle('hidden', isOrd);
-  $('#wrap-serp').classList.toggle('hidden', isOrd);
+  $('#wrap-serp').classList.toggle('hidden', isOrd || isCurve); // no scan order to reverse
   $('#wrap-spread').classList.toggle('hidden', !isOrd);
+  $('#blk-halftone').classList.toggle('hidden', algo!=='ord:screen');
+  $('#wrap-ucr').classList.toggle('hidden', !v('cmyk'));
+  $$('#htanglequick button').forEach(b=>b.classList.toggle('on', b.dataset.a===String(Math.round(num('htangle')))));
   const P = PALETTES[v('palette')];
   $('#wrap-levels').classList.toggle('hidden', !(P.duo||P.ramp));
+  // the tone curve only has stops to move when something is generating them
+  $('#wrap-rampcurve').classList.toggle('hidden', !(P.duo||P.ramp||Math.round(num('depth'))>=2));
+  $('#wrap-palmap').classList.toggle('hidden', P.ramp);
+  paintGridQuick();
+  syncFxStack();
+  $$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.classList.toggle('on', b.getAttribute('aria-pressed')==='true'));
   $('#wrap-duo').classList.toggle('hidden', !P.duo);
   $('#wrap-ncol').classList.toggle('hidden', !P.extracted);
-  $('#wrap-custom').classList.toggle('hidden', !CHARSETS[v('charset')].custom);
+  const CS = CHARSETS[v('charset')];
+  $('#wrap-custom').classList.toggle('hidden', !CS.custom);
+  // Sets marked `u` need glyphs the embedded latin-only faces do not carry. A
+  // substituted glyph rarely has the same advance width, which shears the grid,
+  // so measure the widest character in the set against the active font and say so.
+  const warn = $('#rampwarn');
+  let sheared = false;
+  if(isAscii && CS.u && !CS.custom){
+    const probe = CS.braille ? '⣿' : Array.from(CS.s)[0];
+    sheared = !gridSafe({v:v('font')}, probe);
+  }
+  warn.style.display = sheared ? '' : 'none';
+  if(sheared) warn.textContent =
+    `This font has no glyph for ${CHARSETS[v('charset')].n.toLowerCase()} — the substitute is a different width, so the grid will shear. Filter the font list by the matching facet, or pick another set.`;
   $$('#mode button, #dockmode button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.mode===mode)));
   $$('#colormode button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.cm===colormode)));
   $$('#rampquick .row').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.cs===v('charset'))));
   $$('#ncolquick button').forEach(b=>b.classList.toggle('on', b.dataset.n===String(Math.round(num('ncol')))));
-  $$('#scalequick button').forEach(b=>b.classList.toggle('on', b.dataset.s===String(Math.round(num('oscale')))));
+  $$('#scalequick button').forEach(b=>b.classList.toggle('on',
+    v('sizemode')==='multiplier' && b.dataset.s===String(Math.round(num('oscale')))));
   markFontSel();
   $('#blk-video').classList.toggle('hidden', !isVideo);
   $('#compare').setAttribute('aria-pressed', String(compareOn));
@@ -1739,15 +2619,23 @@ function setCompare(on){
 
 /* ---------- config transport (shared by presets, history, clipboard) ---------- */
 const CFG_IDS = ['bright','contrast','gamma','sat','noise','invert','cols','cell','algo','strength','spread','bias','serp','palette','levels','c0','c1','ncol','acols','charset','custom','rampinv','fsize','lh','font','acolor','afg','abg','atrans','oscale','toclip',
-  'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop'];
+  'fxblur','fxsharp','fxedge','fxpost','fxbloom','fxscan','vfps','vloop',
+  'depth','palmap','rampcurve','dist',
+  'htshape','htangle','htfreq','htink','htgain','cmyk','ucr',
+  'fxorder','fxchroma','fxjpeg','fxwave','fxsort','fxslice','fxvig','fxseed',
+  'tvar','tvamt','choff','cdepth',
+  'sizemode','targetpx','sizepreset'];
+// A control listed here without a matching element used to throw on boot. It is
+// the single easiest mistake to make in this file, so both directions skip
+// quietly instead — an id that has not landed yet simply does not round-trip.
 function readCfg(){
   const o={mode, colormode};
-  CFG_IDS.forEach(id=>{ const e=$('#'+id); o[id] = e.type==='checkbox'?e.checked:e.value; });
+  CFG_IDS.forEach(id=>{ const e=$('#'+id); if(!e) return; o[id] = e.type==='checkbox'?e.checked:e.value; });
   if(extracted) o.extracted = extracted;
   return o;
 }
 function applyCfg(o){
-  CFG_IDS.forEach(id=>{ if(!(id in o)) return; const e=$('#'+id); if(e.type==='checkbox') e.checked=o[id]; else e.value=o[id]; });
+  CFG_IDS.forEach(id=>{ if(!(id in o)) return; const e=$('#'+id); if(!e) return; if(e.type==='checkbox') e.checked=o[id]; else e.value=o[id]; });
   if(o.extracted) extracted=o.extracted;
   if(o.mode) mode=o.mode;
   if(o.colormode) colormode=o.colormode;
@@ -1805,17 +2693,72 @@ function redo(){
   histPos--; applyCfg(history[histPos].cfg); renderHistory(); toast('Redo');
 }
 
+/* ---------- scale ----------
+   Grid width and cell size are the two most-used controls and the useful
+   combinations of them are not obvious, so the named stops do both at once.
+   Detail comes from the grid; output resolution comes from the cell. */
+const GRID_STOPS = [
+  {n:'Micro',  cols:480, cell:1},
+  {n:'Fine',   cols:320, cell:2},
+  {n:'Normal', cols:200, cell:3},
+  {n:'Chunky', cols:128, cell:5},
+  {n:'Blocky', cols:80,  cell:8},
+  {n:'Brutal', cols:48,  cell:14},
+];
+const ASCII_STOPS = [
+  {n:'Micro',  acols:320},
+  {n:'Fine',   acols:220},
+  {n:'Normal', acols:140},
+  {n:'Chunky', acols:90},
+  {n:'Blocky', acols:60},
+  {n:'Brutal', acols:34},
+];
+function paintGridQuick(){
+  const w = $('#gridquick'); w.innerHTML='';
+  const isAscii = mode==='ascii';
+  (isAscii ? ASCII_STOPS : GRID_STOPS).forEach(S=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=S.n;
+    b.classList.toggle('on', isAscii
+      ? Math.round(num('acols'))===S.acols
+      : (Math.round(num('cols'))===S.cols && Math.round(num('cell'))===S.cell));
+    b.addEventListener('click',()=>{ setScale(S); pushHistory(true); });
+    w.appendChild(b);
+  });
+}
+function setScale(S){
+  if(S.acols !== undefined) $('#acols').value = S.acols;
+  else { $('#cols').value = S.cols; $('#cell').value = S.cell; }
+  schedule();
+}
+
 /* ---------- randomize ---------- */
+const locked = id => $('#'+id).getAttribute('aria-pressed')==='true';
+function shuffleAdjustments(){
+  $('#contrast').value = Math.round(Math.random()*80-20);
+  $('#gamma').value    = (0.6+Math.random()*1.2).toFixed(2);
+  $('#bright').value   = Math.round(Math.random()*40-20);
+  $('#sat').value      = Math.round(60+Math.random()*100);
+  $('#noise').value    = Math.round(Math.random()*25);
+  $('#bias').value     = Math.round(Math.random()*40-20);
+  compareOn = false;
+  schedule(); pushHistory(true); toast('Sliders shuffled');
+}
 function randomize(){
   const pick = a => a[(Math.random()*a.length)|0];
-  const algos = [...Object.keys(ED).map(k=>'ed:'+k), ...Object.keys(ORD).map(k=>'ord:'+k)];
-  $('#algo').value = pick(algos);
-  $('#palette').value = pick(Object.keys(PALETTES).filter(k=>!PALETTES[k].extracted));
+  if(!locked('lockalgo')){
+    const algos = [...Object.keys(ED).map(k=>'ed:'+k), ...Object.keys(ORD).map(k=>'ord:'+k)];
+    $('#algo').value = pick(algos);
+  }
+  if(!locked('lockpal')){
+    $('#palette').value = pick(Object.keys(PALETTES).filter(k=>!PALETTES[k].extracted));
+    colormode = Math.random()<0.5 ? 'mono' : 'color';
+  }
+  if(!locked('lockscale')) setScale(pick(mode==='ascii' ? ASCII_STOPS : GRID_STOPS));
   if(mode==='ascii') $('#charset').value = pick(Object.keys(CHARSETS).filter(k=>!CHARSETS[k].custom));
   $('#contrast').value = Math.round(Math.random()*80-20);
   $('#gamma').value = (0.6+Math.random()*1.2).toFixed(2);
   $('#bias').value = Math.round(Math.random()*40-20);
-  colormode = Math.random()<0.5 ? 'mono' : 'color';
   compareOn = false;
   schedule(); pushHistory(true); toast('Randomized');
 }
@@ -1830,26 +2773,68 @@ $('#swedit').addEventListener('input',()=>{
 });
 $('#swedit').addEventListener('change',()=>pushHistory());
 
-/* ---------- presets ---------- */
-(function(){
-  const w=$('#presetlist');
-  for(const k in LOOKS){
-    const L=LOOKS[k];
+/* ---------- presets ----------
+   A look is a *sparse* config. Applying it over the current state would let
+   whatever the user last touched leak through, so every look is layered onto
+   DEFAULTS instead — the same look always produces the same picture. Only the
+   extracted palette survives, because it belongs to the image, not the look. */
+function applyLook(L){
+  const cfg = Object.assign({}, DEFAULTS, L.cfg);
+  cfg.mode = L.mode || DEFAULTS.mode;
+  cfg.colormode = L.cm || DEFAULTS.colormode;
+  if(extracted) cfg.extracted = extracted;
+  applyCfg(cfg);
+  pushHistory(true);
+  toast(`${L.n} applied`);
+}
+/* User looks live alongside the built-ins and travel as a *pack* — one JSON
+   blob carrying several named looks. Still no storage: a pack lives in the
+   clipboard or a text file, the same way a single preset already does. */
+let userLooks = [];
+function captureLook(name){
+  const cfg = readCfg();
+  delete cfg.extracted;                 // belongs to the image, not the look
+  return {n:name, d:'saved look', g:'Yours', cfg, cm:colormode, mode:cfg.mode};
+}
+function packJson(){
+  return JSON.stringify({grit:'preset-pack', v:1, looks:userLooks}, null, 2);
+}
+function loadPack(text){
+  const o = JSON.parse(text);
+  const looks = Array.isArray(o) ? o : o.looks;
+  if(!Array.isArray(looks) || !looks.length) throw new Error('no looks in that pack');
+  // keep only entries that carry a config we can actually apply
+  const good = looks.filter(L=>L && L.cfg && typeof L.cfg==='object')
+                    .map(L=>({n:String(L.n||'Untitled'), d:String(L.d||'from a pack'), g:'Yours',
+                              cfg:L.cfg, cm:L.cm, mode:L.mode}));
+  if(!good.length) throw new Error('no usable looks in that pack');
+  userLooks = good;
+  renderPresets();
+  return good.length;
+}
+function renderPresets(){
+  const w=$('#presetlist'); w.innerHTML='';
+  let group='';
+  const all = {...LOOKS};
+  userLooks.forEach((L,i)=>{ all['user'+i] = L; });
+  for(const k in all){
+    const L=all[k];
+    if(L.g && L.g!==group){
+      group=L.g;
+      const s=document.createElement('div');
+      s.className='sec'; s.style.margin='12px 0 6px'; s.textContent=group;
+      w.appendChild(s);
+    }
     const b=document.createElement('button');
     b.className='row';
     b.innerHTML=`<span class="rl"></span><span class="rr"></span>`;
     b.querySelector('.rl').textContent=L.n;
     b.querySelector('.rr').textContent=L.d;
-    b.addEventListener('click',()=>{
-      for(const id in L.cfg){ const e=$('#'+id); if(!e) continue; if(e.type==='checkbox') e.checked=L.cfg[id]; else e.value=L.cfg[id]; }
-      if(L.cm) colormode=L.cm;
-      if(L.mode) mode=L.mode;
-      compareOn=false;
-      schedule(); pushHistory(true); toast(`${L.n} applied`);
-    });
+    b.addEventListener('click',()=>applyLook(L));
     w.appendChild(b);
   }
-})();
+}
+renderPresets();
 
 /* ---------- vector + markup export ---------- */
 const hex2 = n => n.toString(16).padStart(2,'0');
@@ -2187,7 +3172,10 @@ $('#algonote').addEventListener('click',()=>{
 });
 $$('#rampquick .row').forEach(b=>b.addEventListener('click',()=>{ $('#charset').value=b.dataset.cs; schedule(); pushHistory(true); }));
 $$('#ncolquick button').forEach(b=>b.addEventListener('click',()=>{ $('#ncol').value=b.dataset.n; schedule(); }));
-$$('#scalequick button').forEach(b=>b.addEventListener('click',()=>{ $('#oscale').value=b.dataset.s; schedule(); }));
+$$('#scalequick button').forEach(b=>b.addEventListener('click',()=>{
+  $('#sizemode').value='multiplier'; $('#oscale').value=b.dataset.s; schedule(); markFormat(); updateExportSummary();
+}));
+$$('#sizemode, #targetpx, #sizepreset').forEach(e=>e.addEventListener('input',()=>{ schedule(); markFormat(); updateExportSummary(); }));
 $('#extract').addEventListener('click',()=>{
   if(!img) return toast('Load an image first');
   extracted = extractPalette(Math.round(num('ncol')));
@@ -2240,6 +3228,19 @@ $('#dockpanel').addEventListener('click',()=>{
 $('#dockreset').addEventListener('click',()=>resetAll());
 $('#resetall').addEventListener('click',()=>resetAll());
 function resetAll(){ applyCfg(DEFAULTS); toast('Controls reset'); }
+$('#fxreset').addEventListener('click',()=>{
+  $('#fxorder').value = FX_ORDER.join(',');
+  syncFxStack(); schedule(); pushHistory(true); toast('Effect order reset');
+});
+$('#randomize').addEventListener('click',()=>randomize());
+$('#shuffleadj').addEventListener('click',()=>shuffleAdjustments());
+$$('#lockpal, #lockalgo, #lockscale').forEach(b=>b.addEventListener('click',()=>{
+  b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed')!=='true'));
+  updateVisibility();
+}));
+$$('#htanglequick button').forEach(b=>b.addEventListener('click',()=>{
+  $('#htangle').value = b.dataset.a; schedule(); pushHistory(true);
+}));
 $('#drawerbtn').addEventListener('click',()=>document.body.classList.toggle('drawer'));
 
 /* ---------- image loading ---------- */
@@ -2290,7 +3291,19 @@ function browse(){ $('#file').click(); }
 $('#browse').addEventListener('click', browse);
 $('#emptybrowse').addEventListener('click', browse);
 $('#empty').addEventListener('click', e=>{ if(e.target===$('#empty')||e.target.classList.contains('et')) browse(); });
-$('#file').addEventListener('change',e=>loadFile(e.target.files[0]));
+// several images at once queue up for batch export; the first is also loaded
+// so the settings can be dialled in against something real
+function loadFiles(list){
+  const files = Array.from(list||[]);
+  if(!files.length) return;
+  const images = files.filter(f=>f.type.startsWith('image/'));
+  setBatch(images.length > 1 ? images : []);
+  loadFile(files[0]);
+  if(images.length > 1) toast(`${images.length} images queued for batch`);
+}
+$('#file').addEventListener('change',e=>loadFiles(e.target.files));
+$('#batchgo').addEventListener('click', exportBatch);
+$('#batchclear').addEventListener('click',()=>{ setBatch([]); toast('Batch queue cleared'); });
 $('#pastebtn').addEventListener('click', async ()=>{
   try{
     const items = await navigator.clipboard.read();
@@ -2303,7 +3316,7 @@ $('#pastebtn').addEventListener('click', async ()=>{
 });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ e.preventDefault(); document.body.classList.add('dragging'); }));
 ['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{ e.preventDefault(); if(ev==='drop'||e.target===document.documentElement) document.body.classList.remove('dragging'); }));
-document.addEventListener('drop',e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) loadFile(f); });
+document.addEventListener('drop',e=>{ e.preventDefault(); loadFiles(e.dataTransfer.files); });
 document.addEventListener('paste',e=>{
   const items=e.clipboardData && e.clipboardData.items; if(!items) return;
   for(const it of items){ if(it.type.startsWith('image/')){ loadFile(it.getAsFile()); break; } }
@@ -2372,6 +3385,9 @@ function vToggle(){
   const tick=()=>{
     if(!vPlaying) return;
     if(img.ended && !v('vloop')) return vStop();
+    // keep the frame counter on the clip's own timeline, not the display's, so
+    // playback and an export at the same fps show the same variation
+    frameIndex = Math.round(img.currentTime * Math.round(num('vfps')));
     syncClipReadout();
     render();
     vRaf=requestAnimationFrame(tick);
@@ -2414,6 +3430,7 @@ async function eachFrame(fn){
   vStop();
   for(let i=0;i<total;i++){
     if(encodeCancelled) return {cancelled:true, total};
+    frameIndex = i;                    // drives temporal variation
     await seekTo(i/fps);
     render();
     await fn(i, total);
@@ -2489,6 +3506,57 @@ async function exportFrames(){
   toast(`${files.length} frames saved`);
 }
 
+/* ---------- batch ----------
+   Drop several images, apply the current settings to each, get one ZIP. Dither
+   Boy restricts this to same-size images; there is no reason to here, because
+   the grid is expressed in cells relative to the source aspect, so a mixed set
+   just works. Reuses the clip exporter's progress bar and cancel token. */
+let batchFiles = [];
+function setBatch(files){
+  batchFiles = files;
+  const n = files.length;
+  $('#batchinfo').textContent = n ? `${n} files queued · export as Batch` : '';
+  $('#blk-batch').classList.toggle('hidden', n < 2);
+}
+function loadImageFile(f){
+  return new Promise((res, rej)=>{
+    const url = URL.createObjectURL(f);
+    const im = new Image();
+    im.onload = ()=>{ URL.revokeObjectURL(url); res(im); };
+    im.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error('unreadable')); };
+    im.src = url;
+  });
+}
+async function exportBatch(){
+  if(batchFiles.length < 2) return toast('Drop several images first');
+  const keepImg = img, keepName = imgName, keepVideo = isVideo;
+  encodeCancelled = false;
+  showProgress(true, 'Rendering…');
+  const files = [], skipped = [];
+  for(let i=0;i<batchFiles.length;i++){
+    if(encodeCancelled) break;
+    const f = batchFiles[i];
+    try{
+      const im = await loadImageFile(f);
+      isVideo = false; img = im; imgName = f.name.replace(/\.[^.]+$/,'');
+      render();
+      const blob = await new Promise(r=>out.toBlob(r));
+      files.push({name:`${imgName}-${mode}.png`, data:new Uint8Array(await blob.arrayBuffer())});
+    }catch(e){ skipped.push(f.name); }
+    setProgress((i+1)/batchFiles.length, `Image ${i+1} of ${batchFiles.length}`);
+    await new Promise(r=>setTimeout(r,0));
+  }
+  img = keepImg; imgName = keepName; isVideo = keepVideo;
+  render();
+  showProgress(false);
+  if(encodeCancelled || !files.length) return toast('Batch cancelled');
+  setProgress(1, 'Zipping…');
+  download(zipStore(files), `${files.length}-grit-batch.zip`);
+  toast(skipped.length
+    ? `${files.length} saved · ${skipped.length} could not be read`
+    : `${files.length} images saved`);
+}
+
 /* ---------- exports ---------- */
 function download(blob, name){
   const a=document.createElement('a');
@@ -2535,8 +3603,11 @@ function openExport(){
   if(!img) return toast('Load an image first');
   if(mode!=='ascii' && expFormat==='txt') expFormat='png';
   if(!isVideo && ANIM_FMTS.includes(expFormat)) expFormat='png';
+  if(expFormat==='batch' && batchFiles.length<2) expFormat='png';
   $('#fmtanim').classList.toggle('hidden', !isVideo);
   $('#fmt-anim-lab').classList.toggle('hidden', !isVideo);
+  $('#fmtbatch').classList.toggle('hidden', batchFiles.length<2);
+  $('#fmt-batch-lab').classList.toggle('hidden', batchFiles.length<2);
   markFormat();
   updateExportSummary();
   showProgress(false);
@@ -2545,17 +3616,20 @@ function openExport(){
 }
 function closeExport(){ encodeCancelled=true; showProgress(false); $('#expscrim').classList.remove('on'); }
 function markFormat(){
-  $$('#fmt button, #fmtanim button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
-  const anim = ANIM_FMTS.includes(expFormat);
+  $$('#fmt button, #fmtanim button, #fmtbatch button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.fmt===expFormat)));
+  const anim = ANIM_FMTS.includes(expFormat) || expFormat==='batch';
   // scale, transparency and clipboard don't apply to a clip encode
-  $('#scalequick').closest('.line').classList.toggle('hidden', anim);
-  $('#oscale').closest('.sld').classList.toggle('hidden', anim);
+  const sm = v('sizemode');
+  $('#wrap-sizemode').classList.toggle('hidden', anim);
+  $('#wrap-mult').classList.toggle('hidden', anim || sm!=='multiplier');
+  $('#wrap-targetpx').classList.toggle('hidden', anim || sm!=='longedge');
+  $('#wrap-sizepreset').classList.toggle('hidden', anim || sm!=='preset');
   $('#toclip').closest('.line').classList.toggle('hidden', anim || expFormat==='zip');
-  $('#expgo').textContent = anim ? 'Encode' : 'Save it';
+  $('#expgo').textContent = expFormat==='batch' ? 'Export all' : (anim ? 'Encode' : 'Save it');
 }
 function fmtBytes(kb){ return kb>1024 ? (kb/1024).toFixed(1)+' MB' : Math.max(1,Math.round(kb))+' KB'; }
 function updateExportSummary(){
-  const s = Math.round(num('oscale'));
+  const s = exportScale();
   const suffix = s>1 ? `@${s}x` : '';
   const name = $('#expname'), dims = $('#expdims');
   if(expFormat==='txt'){
@@ -2567,6 +3641,9 @@ function updateExportSummary(){
     const src = expFormat==='svg' ? buildSvg() : buildHtml();
     name.textContent = `${imgName}.${expFormat}`;
     dims.textContent = src ? `vector · ~${fmtBytes(src.length/1024)}` : 'nothing rendered yet';
+  } else if(expFormat==='batch'){
+    name.textContent = `${batchFiles.length}-grit-batch.zip`;
+    dims.textContent = `${batchFiles.length} images · current settings applied to each`;
   } else if(ANIM_FMTS.includes(expFormat)){
     const fps=Math.round(num('vfps')), frames=Math.max(1,Math.floor((img&&img.duration||0)*fps));
     name.textContent = `${imgName}.${expFormat==='zip'?'zip':expFormat}`;
@@ -2574,10 +3651,20 @@ function updateExportSummary(){
   } else {
     name.textContent = `${imgName}-${mode}${suffix}.png`;
     // PNG of flat dithered colour compresses hard; ~0.35 bytes/px is a fair guess
-    dims.textContent = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
+    let line = `${out.width} × ${out.height} · ~${fmtBytes(out.width*out.height*0.35/1024)}`;
+    // say plainly what a target size actually produced — the scale is always a
+    // whole number, so the result usually sits inside the target rather than on it
+    const sm = v('sizemode');
+    if(sm==='preset'){
+      const P = SIZE_PRESETS.find(p=>p.k===v('sizepreset'));
+      if(P) line += ` · ${s}× · fits ${P.n}`;
+    } else if(sm==='longedge'){
+      line += ` · ${s}× · long edge asked for ${Math.round(num('targetpx'))}px`;
+    }
+    dims.textContent = line;
   }
 }
-$$('#fmt button, #fmtanim button').forEach(b=>b.addEventListener('click',()=>{
+$$('#fmt button, #fmtanim button, #fmtbatch button').forEach(b=>b.addEventListener('click',()=>{
   expFormat=b.dataset.fmt; markFormat(); updateExportSummary();
 }));
 $('#openexport').addEventListener('click', openExport);
@@ -2592,7 +3679,8 @@ $('#expgo').addEventListener('click', async ()=>{
     // clip encodes keep the dialog up so the progress bar is visible, then close
     case 'gif':  await exportGif();    closeExport(); return;
     case 'webm': await exportWebm();   closeExport(); return;
-    case 'zip':  await exportFrames(); closeExport(); return;
+    case 'zip':   await exportFrames(); closeExport(); return;
+    case 'batch': await exportBatch();  closeExport(); return;
     default:     clip ? copyImg() : savePng();
   }
   closeExport();
@@ -2611,6 +3699,27 @@ $('#pastecfg').addEventListener('click',async ()=>{
   if(!s) return;
   try{ applyCfg(JSON.parse(s)); pushHistory(); toast('Settings applied'); }
   catch(e){ toast('That was not valid settings JSON'); }
+});
+$('#savelook').addEventListener('click',()=>{
+  const name = (prompt('Name this look:', `Look ${userLooks.length+1}`)||'').trim();
+  if(!name) return;
+  userLooks.push(captureLook(name));
+  renderPresets();
+  toast(`"${name}" added — copy the pack to keep it`);
+});
+$('#copypack').addEventListener('click',async ()=>{
+  if(!userLooks.length) return toast('Save a look first');
+  const s = packJson();
+  try{ await navigator.clipboard.writeText(s); toast(`${userLooks.length} looks copied`); }
+  catch(e){ prompt('Copy your preset pack:', s); }
+});
+$('#pastepack').addEventListener('click',async ()=>{
+  let s='';
+  try{ s = await navigator.clipboard.readText(); }catch(e){}
+  if(!s) s = prompt('Paste a preset pack:') || '';
+  if(!s) return;
+  try{ toast(`${loadPack(s)} looks loaded`); }
+  catch(e){ toast('That was not a valid preset pack'); }
 });
 $('#clearhist').addEventListener('click',()=>{ history=[]; renderHistory(); toast('History cleared'); });
 
@@ -2653,9 +3762,24 @@ function buildCommands(){
   c.push({k:'panel', n:'Show Presets tab', run:()=>showTab('presets')});
   c.push({k:'panel', n:'Show History tab', run:()=>showTab('history')});
   c.push({k:'panel', n:'Reset all controls', run:resetAll});
+  c.push({k:'edit', n:'Shuffle adjustment sliders', run:shuffleAdjustments});
+  c.push({k:'dither', n:'Reset effect order', run:()=>$('#fxreset').click()});
+  c.push({k:'dither', n:'Toggle CMYK separation', run:()=>{
+    $('#algo').value='ord:screen'; $('#cmyk').checked=!$('#cmyk').checked; schedule(); pushHistory(true);
+  }});
+  GRID_STOPS.forEach(S=>c.push({k:'scale', n:`Scale — ${S.n}`, h:`${S.cols}×${S.cell}px`,
+    run:()=>{ setScale(mode==='ascii' ? ASCII_STOPS[GRID_STOPS.indexOf(S)] : S); pushHistory(true); }}));
+  SIZE_PRESETS.forEach(P=>c.push({k:'export', n:`Export size — ${P.n}`, h:P.note, run:()=>{
+    $('#sizemode').value='preset'; $('#sizepreset').value=P.k; schedule(); openExport();
+  }}));
+  if(batchFiles.length>1) c.push({k:'export', n:`Export all ${batchFiles.length} queued images`, run:exportBatch});
   c.push({k:'settings', n:'Copy settings JSON', run:()=>$('#copycfg').click()});
   c.push({k:'settings', n:'Paste settings JSON', run:()=>$('#pastecfg').click()});
-  for(const k in LOOKS) c.push({k:'look', n:LOOKS[k].n, h:LOOKS[k].d, run:()=>{ $$('#presetlist .row')[Object.keys(LOOKS).indexOf(k)].click(); }});
+  c.push({k:'settings', n:'Save this look to a pack', run:()=>$('#savelook').click()});
+  c.push({k:'settings', n:'Copy preset pack', run:()=>$('#copypack').click()});
+  c.push({k:'settings', n:'Paste preset pack', run:()=>$('#pastepack').click()});
+  for(const k in LOOKS) c.push({k:'look', n:LOOKS[k].n, h:LOOKS[k].d, run:()=>applyLook(LOOKS[k])});
+  userLooks.forEach(L=>c.push({k:'look', n:L.n, h:'saved', run:()=>applyLook(L)}));
   for(const k in ED) c.push({k:'algorithm', n:ED[k].n, run:()=>{ $('#algo').value='ed:'+k; schedule(); pushHistory(); }});
   for(const k in ORD) c.push({k:'algorithm', n:ORD[k].n, run:()=>{ $('#algo').value='ord:'+k; schedule(); pushHistory(); }});
   for(const k in PALETTES) c.push({k:'palette', n:PALETTES[k].n, run:()=>{ $('#palette').value=k; schedule(); pushHistory(); }});

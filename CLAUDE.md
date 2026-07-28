@@ -55,6 +55,16 @@ Use a ramp at least 64 cells wide and bin the density into 8 columns. At 8 cells
 wide the check fails for most kernels on unmodified code — a single kernel's local
 error is the same order as the bin — so it reports noise, not regressions.
 
+Both of those are now written down and runnable:
+
+```bash
+node tools/harness.js          # pixel maths, zero dependencies
+node tools/smoke.js            # boots the real file in Chromium (needs playwright)
+```
+
+See `tools/README.md`. Neither is a dependency of the application — there is
+deliberately no `package.json`, so `index.html` stays buildless and standalone.
+
 Useful sanity greps after edits:
 
 ```bash
@@ -69,7 +79,7 @@ EOF
 
 ## Code map
 
-`index.html` is ~1600 lines in three blocks. Line numbers drift — the
+`index.html` is ~3400 lines in three blocks. Line numbers drift — the
 `/* ---------- name ---------- */` comment banners are the stable anchors.
 
 | Region | Contents |
@@ -80,8 +90,10 @@ EOF
 | `<aside id="rail">` | Tabs (Adjust / Presets / History) + every control, as `.blk` blocks. Restyles into a floating glass panel in focus mode. |
 | `<main id="stage">` | Mode tabs, preview canvas `#out`, empty state `#empty`, ASCII text panel `#textwrap`, status bar, focus-mode `#dock`. |
 | `#cmdscrim` / `#expscrim` | Command palette and export dialog overlays. |
-| `algorithms` | `ED` (error-diffusion kernels) and `ORD` (ordered matrices). |
-| `blue noise` | `blueNoiseTile()` — void-and-cluster. Hangs off a lazy getter on `ORD.blue.m`. |
+| `algorithms` | `ED` (error-diffusion kernels) and `ORD` (ordered matrices, threshold functions, parametric screens). `rankMat(n, f)` generates most of the patterned matrices by ranking cells, which guarantees distinct thresholds. |
+| `halftone screen` | `HT_SHAPES` + `ORD.screen.make()` — the adjustable rotatable screen. |
+| `blue noise` | `blueNoiseTile()` — void-and-cluster. Hangs off lazy getters on `ORD.blue16/blue32/blue`. |
+| `Hilbert curve` | `d2xy()`, `riemersmaDither()` — curve-order error diffusion, its own traversal. |
 | `algorithm copy` | `ALGO_INFO` — blurb / pro / con / "best for" per algorithm, for the info card. |
 | `palettes` | `PALETTES` map, `PAL_QUICK` (the five surfaced swatches). |
 | `charsets` | `CHARSETS` map. |
@@ -89,18 +101,24 @@ EOF
 | `looks (presets)` | `LOOKS` — named partial configs applied by the Presets tab. |
 | `state` | Module-level `img`, `mode`, `colormode`, offscreen canvases `work`/`samp`, output `out`. |
 | `helpers` | `v()` / `num()` read control values by id. `toast()`. `syncOuts()` updates slider readouts. |
-| `palette resolution` | `currentPalette()` → array of `[r,g,b]`. |
-| `image adjustments` | `adjust(imageData)` — gamma, contrast, brightness, saturation, grain, invert, mono collapse. Mutates in place. |
-| `effects` | `convolve()`, `effects()` — blur/sharpen/edge/posterize/bloom/scanlines, between `adjust()` and `ditherPixels()`. |
-| `quantize` | `nearest()`, `stepGuess()`, `ditherPixels()` — the core. |
+| `palette resolution` | `CURVES`, `applyDepth()`, `currentPalette()` → array of `[r,g,b]`. |
+| `image adjustments` | `mulberry()` seeded PRNG, `temporal()`, and `adjust(imageData)` — gamma, contrast, brightness, saturation, grain, invert, mono collapse. Mutates in place. |
+| `effects` | `convolve()`, the `FX` pass table, `fxOrder()`, `effects()` — twelve reorderable passes between `adjust()` and `ditherPixels()`. |
+| `quantize` | `nearest()`, `srgbToOklab()`, `stepGuess()`, `ditherPixels()`, `ditherByTone()` — the core. |
 | `median cut extraction` | `extractPalette(n)`. |
+| `CMYK halftone` | `cmykScreen()` — four rotated screens multiplied together. |
+| `output scale` | `SIZE_PRESETS`, `baseOutSize()`, `exportScale()` — always a whole number. |
 | `render: dither` | `renderDither()`. |
 | `render: ascii` | `charsetChars()`, `denseOnBright()`, `renderAscii()`. |
 | `status bar` | `setStatus()` — cells, algorithm, colours; render time is measured in `render()`. |
 | `algorithm info card` | `algoThumb()` renders the *real* algorithm at 26×20; `renderAlgoCard()` fills the copy. |
-| `driver` | `render()`, `schedule()` (rAF-debounced), `updateVisibility()`. |
+| `driver` | `render()`, `schedule()` (rAF + cost-based coalescing), `previewCols()`, `updateVisibility()`. |
 | `config transport` | `readCfg()` / `applyCfg()` / `CFG_IDS` / `DEFAULTS`. Shared by presets, history, reset and the clipboard. |
 | `history` | `pushHistory()` (debounced 800ms), `renderHistory()`. Parameter snapshots, never bitmaps. |
+| `scale` | `GRID_STOPS` / `ASCII_STOPS` named stops, `setScale()`. |
+| `randomize` | `randomize()`, `shuffleAdjustments()`, lock chips. |
+| `presets` | `applyLook()` (layers over `DEFAULTS`), `renderPresets()`, `captureLook()`, `packJson()`, `loadPack()`. |
+| `batch` | `setBatch()`, `exportBatch()` — several images through the current settings into one ZIP. |
 | `font picker` | Measurement-based `isInstalled()` / `gridSafe()`, facets, `renderFontList()`. |
 | `vector + markup export` | `svgDither()`, `svgAscii()`, `buildHtml()` — run-merged SVG and standalone HTML. |
 | `animated GIF` | `lzwEncode()`, `gifEncoder()` — GIF89a written by hand. |
@@ -124,6 +142,9 @@ EOF
   every input event via `schedule()`.
 - Adding a control that should survive a preset round-trip means adding its id to
   the `CFG_IDS` array. Easy to forget. It also governs history snapshots and reset.
+  `readCfg`/`applyCfg` skip ids with no element rather than throwing, so a stale
+  entry degrades quietly — `tools/smoke.js` asserts the list matches the DOM and
+  that `applyCfg(readCfg())` is a no-op, which is what actually catches this.
 - **Visual work goes through `docs/STYLE_GUIDE.md`.** Tokens, the block kit, and
   the rules for adding a control are there. Don't introduce a new colour, radius
   or type size without checking it first.
@@ -185,19 +206,50 @@ has dither texture instead of banding.
   slider drag records once, but a discrete action (load, preset, algorithm pick)
   must pass `pushHistory(true)` — otherwise the next edit clears the pending timer
   and undo can never step back into that state.
+- **Script-level `let` is not on `window`.** Top-level `let`/`const` in a classic
+  script live in the global *lexical* environment. From a devtools console or a
+  Playwright `evaluate`, read and write them as bare identifiers (`frameIndex = 9`),
+  never as `window.frameIndex` — the latter silently creates an unrelated
+  property, which made a smoke test pass while testing nothing.
+- **Comparing two dithered canvases needs a position-sensitive signature.**
+  Summing channel values over a two-colour dither only counts how many pixels
+  are lit, not where — a completely reshuffled grain pattern measures as
+  identical. Hash with position.
+- **Effect order lives in `#fxorder`, not in any pass.** It is a hidden input
+  holding a comma-joined key list, because `readCfg()` has to be able to see it.
+  `fxOrder()` drops unknown keys and appends missing ones, so presets saved
+  before a pass existed still load. Reordering *moves* the existing rows with
+  `appendChild` — rebuilding them would drop the boot-time auto-binding.
+- **Anything random must go through `mulberry(fxSeed)`.** Raw `Math.random()` in
+  the render path reshuffles on every render: the preview crawls while you drag
+  an unrelated slider, and a clip's grain flickers frame to frame. Grain hit
+  exactly this bug. `temporal()` advances the seed deliberately for motion.
+- **A preset is applied over `DEFAULTS`, not over current state.** `applyLook()`
+  layers a sparse look onto the defaults so the same look always renders the
+  same picture. Only `extracted` survives, because it belongs to the image.
+- **Export scale is always an integer.** `exportScale()` picks the largest whole
+  multiplier that fits inside a target size. A fractional scale would give cells
+  of uneven width under nearest-neighbour, which is the resampling mush
+  constraint 5 exists to prevent. Never letterbox or resample to hit a number.
+- **Charsets marked `u:true` need glyphs the embedded faces don't have.** The two
+  embedded families are latin-only; a substituted glyph has a different advance
+  width and shears the grid. `updateVisibility()` measures via `gridSafe()` and
+  warns. Don't add an exotic set without the flag.
 - **Font availability can't be measured at boot.** `document.fonts.ready` has not
   settled, so the embedded faces measure as missing. The font picker recomputes
   once it resolves.
 
 ## Current state
 
-Working and complete for the original ask, on the Design handoff's visual system
-(see `docs/STYLE_GUIDE.md`). See `docs/ROADMAP.md` for what was deliberately left
-out (video, stacked effects, true blue noise, SVG export).
+Working and complete for the original ask, plus the Dither Boy parity work in
+`docs/FEATURE_PLAN.md` (all five phases landed). 52 algorithms, 39 palettes, 34
+charsets, 41 presets, 12 reorderable effect passes.
 
 Known rough edges:
-- Very large grids (800+ cells) with a 12-tap kernel like Jarvis are noticeably
-  slow on every keystroke — no worker, no throttle beyond rAF.
+- Very large grids with a 12-tap kernel are still slow on a *settled* render —
+  1200 cells with Jarvis is ~265ms. Dragging previews at a reduced grid (~13ms)
+  and renders overrunning a frame coalesce input, but there is still no worker,
+  so the render that lands on pointer release is the full cost.
 - `#textout` is `readonly` and re-rendered wholesale; there's no virtualization,
   so 400-column braille output makes the text panel sluggish.
 - The `stepGuess()` heuristic for ordered-dither spread on arbitrary colour
@@ -206,8 +258,18 @@ Known rough edges:
   is capped at 40 snapshots and debounced 800ms, so a slider drag records once.
 - The export dialog's file-size figure is an estimate (~0.35 bytes/px), not a real
   encode. It is a hint, not a promise.
-- 22 of the 26 `ALGO_INFO` blurbs were written during implementation, not by
+- 49 of the 52 `ALGO_INFO` blurbs were written during implementation, not by
   Design. Flagged in `docs/STYLE_GUIDE.md` for review.
+- **Ostromoukhov is deliberately absent.** It needs a published 256-row
+  variable-coefficient table that could not be verified; inventing the numbers
+  would be worse than the gap. It remains the best available tone reproduction
+  and is worth adding from a real source.
+- CMYK separation is a *look*, not colour management. Plain GCR with a slider,
+  no profile, no ink limit.
+- `stepGuess()` still governs ordered spread, and the parametric halftone screen
+  leans on it too, so the approximation now shows up in more places.
+- The exotic charsets (chess, dice, dominoes, tally) will shear the grid on the
+  embedded fonts. The warning tells you; nothing stops you.
 - Clip encoding runs the full pipeline per frame on the main thread. A long clip
   at a high frame rate takes real time; there's a progress bar and a cancel, but
   no worker.

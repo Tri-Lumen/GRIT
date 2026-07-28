@@ -1,0 +1,59 @@
+name: Release
+
+# GRIT is one self-contained file, so a release is just that file. Push a tag
+# and the workflow publishes index.html as `grit.html` — people download one
+# thing and open it, rather than cloning the source tree.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# Can also be run by hand from the Actions tab against any tag or branch.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: ver
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # A corrupt single-file app is the only way this release can fail, so
+      # check the two things that would make it one before publishing.
+      - name: Verify the file is intact
+        run: |
+          python3 -c "import re;h=open('index.html',encoding='utf-8').read();print(re.search(r'<script>(.*?)</script>',h,re.S).group(1))" > /tmp/app.js
+          node --check /tmp/app.js
+          if grep -q $'�' index.html; then echo "mojibake in index.html"; exit 1; fi
+          echo "index.html is $(du -h index.html | cut -f1)"
+
+      - name: Stage the download
+        run: cp index.html grit.html
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: GRIT ${{ steps.ver.outputs.tag }}
+          files: grit.html
+          generate_release_notes: true
+          body: |
+            ## Download
+
+            Grab **`grit.html`** below — that one file is the whole application.
+
+            Save it anywhere and open it in a browser. It runs entirely offline
+            from `file://`: no install, no build step, no dependencies, no
+            network calls, and nothing written to browser storage.
